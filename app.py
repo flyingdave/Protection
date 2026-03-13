@@ -129,6 +129,7 @@ DEFAULT_NETWORK_PRESET = {
     "transformer_xr": 8.0,
     "lv_cable_length_km": 0.01,
     "lv_cable_type": "11kV XLPE 3c 300mm2 Cu",
+    "duplicate_source_to_first_busbar_circuit": False,
     "feeder_length_km": 0.5,
     "feeder_cable_type": "Default Cable",
     "study_bus": "11kV Transformer Busbar",
@@ -192,6 +193,8 @@ STUDY_CASE_BOUNDS = {
     "clearing_time_s": (0.01, 5.00),
     "working_distance_mm": (200, 2000),
 }
+
+STUDY_CASE_BOOL_FIELDS = {"duplicate_source_to_first_busbar_circuit"}
 
 STUDY_CASE_INT_FIELDS = {"frequency_hz", "working_distance_mm"}
 
@@ -332,6 +335,19 @@ def default_relay_settings_df() -> pd.DataFrame:
     return pd.DataFrame(BASELINE_RELAY_SETTINGS)[RELAY_EXPORT_COLUMNS]
 
 
+def parse_bool_like(raw_value: object) -> bool:
+    if isinstance(raw_value, bool):
+        return raw_value
+
+    normalized_value = str(raw_value).strip().lower()
+    if normalized_value in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized_value in {"0", "false", "no", "n", "off"}:
+        return False
+
+    raise ValueError(f"Could not parse boolean value from {raw_value!r}.")
+
+
 def legacy_enclosure_type_to_arc_enclosure(enclosure_type: object) -> str:
     normalized_value = str(enclosure_type).strip().lower()
     if normalized_value == "open air":
@@ -350,7 +366,9 @@ def coerce_study_case_value(key: str, raw_value: object, default_value: object) 
         pass
 
     try:
-        if key in STUDY_CASE_INT_FIELDS:
+        if key in STUDY_CASE_BOOL_FIELDS:
+            parsed_value = parse_bool_like(raw_value)
+        elif key in STUDY_CASE_INT_FIELDS:
             parsed_value = int(float(raw_value))
         elif isinstance(default_value, float):
             parsed_value = float(raw_value)
@@ -513,7 +531,9 @@ def parse_study_case_csv(upload_bytes: bytes) -> tuple[bool, str]:
             continue
 
         try:
-            if key in STUDY_CASE_INT_FIELDS:
+            if key in STUDY_CASE_BOOL_FIELDS:
+                parsed_value = parse_bool_like(raw_value)
+            elif key in STUDY_CASE_INT_FIELDS:
                 parsed_value = int(float(raw_value))
             elif isinstance(default_value, float):
                 parsed_value = float(raw_value)
@@ -654,6 +674,12 @@ with network_tab:
         "Legacy cable sequence data uses best-available typical values for old assets. "
         "Where detailed test data is unavailable, Z2 is taken equal to Z1 and typical Z0 values are used."
     )
+    if st.session_state.get("duplicate_source_to_first_busbar_circuit", False):
+        st.caption(
+            "Optional duplicate circuit enabled: reactor, 33kV cable, transformer, and 11kV transformer cable "
+            "are modeled as two identical circuits in parallel from the 33kV source bus to the first 11kV busbar. "
+            "The upstream source equivalent remains common."
+        )
 
     col1, col2, col3 = st.columns(3)
 
@@ -749,6 +775,10 @@ with network_tab:
             options=LV_CABLE_OPTIONS,
             key="lv_cable_type",
         )
+        duplicate_source_to_first_busbar_circuit = st.checkbox(
+            "Duplicate source-to-1st-11kV-busbar circuit in parallel",
+            key="duplicate_source_to_first_busbar_circuit",
+        )
 
     with col3:
         st.markdown("**11kV Study Side**")
@@ -805,14 +835,23 @@ lv_cable_z1 = lv_cable_length_km * lv_cable_data["z1"] * lv_to_study_factor
 lv_cable_z2 = lv_cable_length_km * lv_cable_data["z2"] * lv_to_study_factor
 lv_cable_z0 = lv_cable_length_km * lv_cable_data["z0"] * lv_to_study_factor
 
+single_source_to_first_busbar_circuit_z1 = reactor_z1 + hv_cable_z1 + transformer_z1 + lv_cable_z1
+single_source_to_first_busbar_circuit_z2 = reactor_z2 + hv_cable_z2 + transformer_z2 + lv_cable_z2
+single_source_to_first_busbar_circuit_z0 = reactor_z0 + hv_cable_z0 + transformer_z0 + lv_cable_z0
+
+parallel_circuit_count = 2 if duplicate_source_to_first_busbar_circuit else 1
+source_to_first_busbar_equiv_z1 = single_source_to_first_busbar_circuit_z1 / parallel_circuit_count
+source_to_first_busbar_equiv_z2 = single_source_to_first_busbar_circuit_z2 / parallel_circuit_count
+source_to_first_busbar_equiv_z0 = single_source_to_first_busbar_circuit_z0 / parallel_circuit_count
+
 feeder_cable_data = cable_sequence_impedance_per_km(feeder_cable_type)
 feeder_z1 = feeder_length_km * feeder_cable_data["z1"]
 feeder_z2 = feeder_length_km * feeder_cable_data["z2"]
 feeder_z0 = feeder_length_km * feeder_cable_data["z0"]
 
-z1_incomer = source_z1 + reactor_z1 + hv_cable_z1 + transformer_z1 + lv_cable_z1
-z2_incomer = source_z2 + reactor_z2 + hv_cable_z2 + transformer_z2 + lv_cable_z2
-z0_incomer = source_z0 + reactor_z0 + hv_cable_z0 + transformer_z0 + lv_cable_z0
+z1_incomer = source_z1 + source_to_first_busbar_equiv_z1
+z2_incomer = source_z2 + source_to_first_busbar_equiv_z2
+z0_incomer = source_z0 + source_to_first_busbar_equiv_z0
 
 z1_load = z1_incomer + feeder_z1
 z2_load = z2_incomer + feeder_z2
@@ -866,53 +905,76 @@ with network_tab:
     st.dataframe(cable_library_df, use_container_width=True)
 
     st.markdown("#### Sequence Impedance Build-Up (Referred to Study Voltage)")
-    impedance_df = pd.DataFrame(
+    impedance_rows = [
+        {
+            "Element": "Source equivalent (referred)",
+            "Z1 (Ω)": format_complex_ohm(source_z1),
+            "Z2 (Ω)": format_complex_ohm(source_z2),
+            "Z0 (Ω)": format_complex_ohm(source_z0),
+            "|Z1|": abs(source_z1),
+            "|Z2|": abs(source_z2),
+            "|Z0|": abs(source_z0),
+        },
+        {
+            "Element": "33kV reactor (per circuit, referred)",
+            "Z1 (Ω)": format_complex_ohm(reactor_z1),
+            "Z2 (Ω)": format_complex_ohm(reactor_z2),
+            "Z0 (Ω)": format_complex_ohm(reactor_z0),
+            "|Z1|": abs(reactor_z1),
+            "|Z2|": abs(reactor_z2),
+            "|Z0|": abs(reactor_z0),
+        },
+        {
+            "Element": "33kV cable (per circuit, referred)",
+            "Z1 (Ω)": format_complex_ohm(hv_cable_z1),
+            "Z2 (Ω)": format_complex_ohm(hv_cable_z2),
+            "Z0 (Ω)": format_complex_ohm(hv_cable_z0),
+            "|Z1|": abs(hv_cable_z1),
+            "|Z2|": abs(hv_cable_z2),
+            "|Z0|": abs(hv_cable_z0),
+        },
+        {
+            "Element": "Transformer equivalent (per circuit, referred)",
+            "Z1 (Ω)": format_complex_ohm(transformer_z1),
+            "Z2 (Ω)": format_complex_ohm(transformer_z2),
+            "Z0 (Ω)": format_complex_ohm(transformer_z0),
+            "|Z1|": abs(transformer_z1),
+            "|Z2|": abs(transformer_z2),
+            "|Z0|": abs(transformer_z0),
+        },
+        {
+            "Element": "11kV cable from transformer (per circuit)",
+            "Z1 (Ω)": format_complex_ohm(lv_cable_z1),
+            "Z2 (Ω)": format_complex_ohm(lv_cable_z2),
+            "Z0 (Ω)": format_complex_ohm(lv_cable_z0),
+            "|Z1|": abs(lv_cable_z1),
+            "|Z2|": abs(lv_cable_z2),
+            "|Z0|": abs(lv_cable_z0),
+        },
+        {
+            "Element": "Single circuit subtotal: 33kV source bus to 1st 11kV busbar",
+            "Z1 (Ω)": format_complex_ohm(single_source_to_first_busbar_circuit_z1),
+            "Z2 (Ω)": format_complex_ohm(single_source_to_first_busbar_circuit_z2),
+            "Z0 (Ω)": format_complex_ohm(single_source_to_first_busbar_circuit_z0),
+            "|Z1|": abs(single_source_to_first_busbar_circuit_z1),
+            "|Z2|": abs(single_source_to_first_busbar_circuit_z2),
+            "|Z0|": abs(single_source_to_first_busbar_circuit_z0),
+        },
+    ]
+    if duplicate_source_to_first_busbar_circuit:
+        impedance_rows.append(
+            {
+                "Element": "Equivalent of 2 parallel source-to-1st-11kV-busbar circuits",
+                "Z1 (Ω)": format_complex_ohm(source_to_first_busbar_equiv_z1),
+                "Z2 (Ω)": format_complex_ohm(source_to_first_busbar_equiv_z2),
+                "Z0 (Ω)": format_complex_ohm(source_to_first_busbar_equiv_z0),
+                "|Z1|": abs(source_to_first_busbar_equiv_z1),
+                "|Z2|": abs(source_to_first_busbar_equiv_z2),
+                "|Z0|": abs(source_to_first_busbar_equiv_z0),
+            }
+        )
+    impedance_rows.extend(
         [
-            {
-                "Element": "Source equivalent (referred)",
-                "Z1 (Ω)": format_complex_ohm(source_z1),
-                "Z2 (Ω)": format_complex_ohm(source_z2),
-                "Z0 (Ω)": format_complex_ohm(source_z0),
-                "|Z1|": abs(source_z1),
-                "|Z2|": abs(source_z2),
-                "|Z0|": abs(source_z0),
-            },
-            {
-                "Element": "33kV reactor (referred)",
-                "Z1 (Ω)": format_complex_ohm(reactor_z1),
-                "Z2 (Ω)": format_complex_ohm(reactor_z2),
-                "Z0 (Ω)": format_complex_ohm(reactor_z0),
-                "|Z1|": abs(reactor_z1),
-                "|Z2|": abs(reactor_z2),
-                "|Z0|": abs(reactor_z0),
-            },
-            {
-                "Element": "33kV cable (referred)",
-                "Z1 (Ω)": format_complex_ohm(hv_cable_z1),
-                "Z2 (Ω)": format_complex_ohm(hv_cable_z2),
-                "Z0 (Ω)": format_complex_ohm(hv_cable_z0),
-                "|Z1|": abs(hv_cable_z1),
-                "|Z2|": abs(hv_cable_z2),
-                "|Z0|": abs(hv_cable_z0),
-            },
-            {
-                "Element": "Transformer equivalent (referred)",
-                "Z1 (Ω)": format_complex_ohm(transformer_z1),
-                "Z2 (Ω)": format_complex_ohm(transformer_z2),
-                "Z0 (Ω)": format_complex_ohm(transformer_z0),
-                "|Z1|": abs(transformer_z1),
-                "|Z2|": abs(transformer_z2),
-                "|Z0|": abs(transformer_z0),
-            },
-            {
-                "Element": "11kV cable from transformer",
-                "Z1 (Ω)": format_complex_ohm(lv_cable_z1),
-                "Z2 (Ω)": format_complex_ohm(lv_cable_z2),
-                "Z0 (Ω)": format_complex_ohm(lv_cable_z0),
-                "|Z1|": abs(lv_cable_z1),
-                "|Z2|": abs(lv_cable_z2),
-                "|Z0|": abs(lv_cable_z0),
-            },
             {
                 "Element": "11kV feeder",
                 "Z1 (Ω)": format_complex_ohm(feeder_z1),
@@ -942,6 +1004,7 @@ with network_tab:
             },
         ]
     )
+    impedance_df = pd.DataFrame(impedance_rows)
     st.dataframe(
         impedance_df.style.format({"|Z1|": "{:.4f}", "|Z2|": "{:.4f}", "|Z0|": "{:.4f}"}),
         use_container_width=True,
