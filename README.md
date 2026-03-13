@@ -1,46 +1,51 @@
 # Protection
 
-A web GUI application built with [Streamlit](https://streamlit.io/) and Python.
+[![CI](https://github.com/flyingdave/Protection/actions/workflows/ci.yml/badge.svg)](https://github.com/flyingdave/Protection/actions/workflows/ci.yml)
+
+An ETAP-style web GUI prototype built with [Streamlit](https://streamlit.io/) and Python.
+
+## Features
+
+- Accepts core power network parameters (source, transformer, feeder).
+- Calculates fault levels at incomer and load bus (3-phase, line-line, line-ground).
+- Allows entry of protection relay settings (pickup, TMS, IEC inverse curves, instantaneous).
+- Displays operating times and grading margins between downstream/upstream devices.
+- Provides a simplified arc-flash screening estimate (arcing current, incident energy, boundary).
+
+## Scope Note
+
+This tool is an MVP for study/screening workflows. It is **not** a substitute for a full protection and arc-flash study using utility data, detailed sequence network modeling, and formal IEEE 1584 / IEC / NFPA methods.
 
 ## Getting Started
 
 ### Prerequisites
+
 - Python 3.9+
 
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/<your-username>/Protection.git
+git clone https://github.com/flyingdave/Protection.git
 cd Protection
 
-# Create and activate a virtual environment
 python -m venv .venv
 .venv\Scripts\activate   # Windows
 # source .venv/bin/activate  # macOS/Linux
 
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Running the app
+### Run
 
 ```bash
 streamlit run app.py
 ```
 
-The app will open at `http://localhost:8501` in your browser.
+Then open `http://localhost:8501`.
 
-## Project Structure
+## Study Flow
 
-```
-Protection/
-├── app.py              # Main Streamlit application
-├── requirements.txt    # Python dependencies
-├── .gitignore
-└── README.md
-```
-
-## License
-
-Private — All rights reserved.
+1. Enter network parameters in **Network Inputs**.
+2. Review calculated fault levels in **Fault Levels**.
+3. Enter relay settings and check grading in **Protection & Grading**.
+4. Run arc-flash screening in **Arc-Flash Estimate**.
