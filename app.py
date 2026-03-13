@@ -421,6 +421,7 @@ def load_network_preset() -> None:
 def restore_original_defaults() -> None:
     load_network_preset()
     st.session_state.relay_settings = default_relay_settings_df()
+    st.session_state.pop("relay_settings_editor", None)
 
 
 def serialize_study_case_csv() -> bytes:
@@ -1027,7 +1028,8 @@ with protection_tab:
             imported_relay_df, relay_message = parse_relay_settings_csv(relay_upload_bytes)
             st.session_state["relay_upload_digest"] = relay_upload_digest
             if imported_relay_df is not None:
-                st.session_state.relay_settings = imported_relay_df
+                st.session_state.relay_settings = imported_relay_df.reset_index(drop=True)
+                st.session_state.pop("relay_settings_editor", None)
                 st.session_state["relay_upload_status"] = "success"
             else:
                 st.session_state["relay_upload_status"] = "error"
@@ -1039,9 +1041,14 @@ with protection_tab:
         else:
             st.error(st.session_state["relay_upload_message"])
 
+    relay_editor_df = pd.DataFrame(st.session_state.relay_settings).reset_index(drop=True)
+    if relay_editor_df.empty:
+        relay_editor_df = default_relay_settings_df()
+
     edited_df = st.data_editor(
-        st.session_state.relay_settings,
+        relay_editor_df,
         num_rows="dynamic",
+        key="relay_settings_editor",
         use_container_width=True,
         column_config={
             "Order": st.column_config.NumberColumn("Order", min_value=1, step=1),
@@ -1052,6 +1059,7 @@ with protection_tab:
             "Inst_A": st.column_config.NumberColumn("Instantaneous pickup (A)", min_value=0.0),
         },
     )
+    edited_df = pd.DataFrame(edited_df).reset_index(drop=True)
     st.session_state.relay_settings = edited_df
 
     relay_df = sanitize_relay_settings(pd.DataFrame(edited_df))
