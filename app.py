@@ -76,7 +76,6 @@ LV_CABLE_OPTIONS = [
 
 SOURCE_Z0_FACTOR = 3.0
 TRANSFORMER_Z0_FACTOR = 1.0
-MIN_GRADING_CHECK_TIME_S = 0.051
 
 BASELINE_RELAY_SETTINGS = [
     {
@@ -1112,9 +1111,6 @@ with protection_tab:
             if not (math.isfinite(downstream_time_s) and math.isfinite(upstream_time_s)):
                 margin_s = math.nan
                 status = "CHECK"
-            elif downstream_time_s < MIN_GRADING_CHECK_TIME_S or upstream_time_s < MIN_GRADING_CHECK_TIME_S:
-                margin_s = math.nan
-                status = "IGNORED (<0.051s)"
             else:
                 margin_s = upstream_time_s - downstream_time_s
                 status = "PASS" if margin_s >= grading_margin_s else "FAIL"
@@ -1131,9 +1127,6 @@ with protection_tab:
 
         grading_df = pd.DataFrame(grading_rows)
         st.markdown("#### Grading Margins")
-        st.caption(
-            f"Pairs with relay operating time faster than {MIN_GRADING_CHECK_TIME_S:.3f} s are ignored in grading checks."
-        )
         st.dataframe(
             grading_df.style.format({"Margin_s": "{:.3f}", "Target_s": "{:.3f}"}),
             use_container_width=True,
