@@ -1119,11 +1119,22 @@ with protection_tab:
 
         relay_results_df = pd.DataFrame(relay_results).sort_values("Order").reset_index(drop=True)
 
-        st.markdown("#### Relay Operating Times at Selected Current")
+        st.markdown("#### Trip Time Readout at Slider Current")
+        trip_readout_df = relay_results_df[
+            ["Order", "Device", "Curve", "Pickup_A", "TMS", "Inst_A", "Operate_s", "Operate_display"]
+        ].copy()
+        trip_readout_df["Operate_s"] = trip_readout_df["Operate_s"].apply(
+            lambda value: value if math.isfinite(float(value)) else math.nan
+        )
         st.dataframe(
-            relay_results_df[
-                ["Order", "Device", "Curve", "Pickup_A", "TMS", "Inst_A", "Operate_display"]
-            ],
+            trip_readout_df.style.format(
+                {
+                    "Pickup_A": "{:.1f}",
+                    "TMS": "{:.3f}",
+                    "Inst_A": "{:.1f}",
+                    "Operate_s": "{:.4f}",
+                }
+            ),
             use_container_width=True,
         )
 
@@ -1152,11 +1163,25 @@ with protection_tab:
             )
 
         grading_df = pd.DataFrame(grading_rows)
-        st.markdown("#### Grading Margins")
+        st.markdown("#### Margin Readout at Slider Current")
         st.dataframe(
             grading_df.style.format({"Margin_s": "{:.3f}", "Target_s": "{:.3f}"}),
             use_container_width=True,
         )
+
+        margin_readout = []
+        for _, margin_row in grading_df.iterrows():
+            margin_value = float(margin_row["Margin_s"])
+            if math.isfinite(margin_value) and margin_row["Status"] in ["PASS", "FAIL"]:
+                margin_readout.append(
+                    f"{margin_row['Downstream']} → {margin_row['Upstream']}: {margin_value:.3f} s ({margin_row['Status']})"
+                )
+            else:
+                margin_readout.append(
+                    f"{margin_row['Downstream']} → {margin_row['Upstream']}: CHECK"
+                )
+        if margin_readout:
+            st.caption(" | ".join(margin_readout))
 
         graded_df = grading_df[grading_df["Status"].isin(["PASS", "FAIL"])]
         if not graded_df.empty and (graded_df["Status"] == "FAIL").any():
