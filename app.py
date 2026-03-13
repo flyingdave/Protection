@@ -1148,8 +1148,9 @@ with protection_tab:
             st.info("No relay pairs qualified for grading checks at this fault level.")
 
         min_pickup = max(float(relay_df["Pickup_A"].min()) * 1.05, 1.0)
+        max_fault_current_a = incomer_fault["I_3ph_kA"] * 1000
         max_current = max(
-            selected_fault_current_a * 1.30,
+            max_fault_current_a * 2.0,
             float(relay_df["Inst_A"].max()) * 1.20,
             min_pickup * 5,
         )
@@ -1191,7 +1192,7 @@ with protection_tab:
                     x=alt.X(
                         "Current_A:Q",
                         title="Current (A)",
-                        scale=alt.Scale(type="log"),
+                        scale=alt.Scale(type="log", domain=[min_pickup * 0.9, max_current]),
                         axis=alt.Axis(grid=True),
                     ),
                     y=alt.Y(
