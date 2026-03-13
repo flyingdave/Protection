@@ -849,7 +849,7 @@ with protection_tab:
             "Device": st.column_config.TextColumn("Device"),
             "Curve": st.column_config.SelectboxColumn("Curve", options=list(CURVE_CONSTANTS.keys())),
             "Pickup_A": st.column_config.NumberColumn("Pickup (A)", min_value=1.0),
-            "TMS": st.column_config.NumberColumn("TMS", min_value=0.01),
+            "TMS": st.column_config.NumberColumn("TMS", min_value=0.01, max_value=1.0),
             "Inst_A": st.column_config.NumberColumn("Instantaneous pickup (A)", min_value=0.0),
         },
     )
