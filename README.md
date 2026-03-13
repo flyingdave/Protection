@@ -11,6 +11,7 @@ An ETAP-style web GUI prototype built with [Streamlit](https://streamlit.io/) an
 - Allows entry of protection relay settings (pickup, TMS, IEC inverse curves, instantaneous).
 - Displays operating times and grading margins between downstream/upstream devices.
 - Provides a simplified arc-flash screening estimate (arcing current, incident energy, boundary).
+- Supports CSV import/export for study cases and relay settings.
 
 ## Scope Note
 

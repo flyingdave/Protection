@@ -1,4 +1,7 @@
+import hashlib
+import io
 import math
+from typing import Optional, Tuple
 
 import pandas as pd
 import streamlit as st
@@ -9,6 +12,76 @@ CURVE_CONSTANTS = {
     "IEC Very Inverse": (13.5, 1.0),
     "IEC Extremely Inverse": (80.0, 2.0),
     "IEC Long-Time Inverse": (120.0, 1.0),
+}
+
+RELAY_EXPORT_COLUMNS = ["Order", "Device", "Curve", "Pickup_A", "TMS", "Inst_A"]
+
+DEFAULT_STUDY_CASE = {
+    "project_name": "Protection",
+    "grading_margin_s": 0.30,
+    "v_ll_kv": 11.0,
+    "frequency_hz": 50,
+    "source_sc_mva": 500.0,
+    "source_xr": 10.0,
+    "transformer_mva": 10.0,
+    "transformer_z_pct": 8.0,
+    "transformer_xr": 8.0,
+    "feeder_length_km": 0.5,
+    "feeder_r_ohm_per_km": 0.08,
+    "feeder_x_ohm_per_km": 0.10,
+    "ll_factor": 0.87,
+    "lg_factor": 0.95,
+    "study_bus": "Incomer Bus",
+    "fault_type": "3-Phase",
+    "bolted_fault_current_ka": 10.0,
+    "arc_current_factor": 0.85,
+    "clearing_time_s": 0.20,
+    "working_distance_mm": 455,
+    "enclosure_type": "Switchboard",
+}
+
+STUDY_CASE_OPTION_VALUES = {
+    "frequency_hz": {50, 60},
+    "study_bus": {"Incomer Bus", "Load Bus"},
+    "fault_type": {"3-Phase", "Line-Line", "Line-Ground"},
+    "enclosure_type": {"Open air", "Switchboard", "Metal-clad cubicle"},
+}
+
+STUDY_CASE_BOUNDS = {
+    "grading_margin_s": (0.10, 1.00),
+    "v_ll_kv": (0.4, 66.0),
+    "source_sc_mva": (10.0, 50000.0),
+    "source_xr": (0.0, 50.0),
+    "transformer_mva": (0.1, 1000.0),
+    "transformer_z_pct": (1.0, 25.0),
+    "transformer_xr": (0.0, 50.0),
+    "feeder_length_km": (0.0, 100.0),
+    "feeder_r_ohm_per_km": (0.0, 5.0),
+    "feeder_x_ohm_per_km": (0.0, 5.0),
+    "ll_factor": (0.50, 1.00),
+    "lg_factor": (0.50, 1.20),
+    "bolted_fault_current_ka": (0.1, 200.0),
+    "arc_current_factor": (0.50, 1.00),
+    "clearing_time_s": (0.01, 2.00),
+    "working_distance_mm": (200, 2000),
+}
+
+STUDY_CASE_INT_FIELDS = {"frequency_hz", "working_distance_mm"}
+
+RELAY_COLUMN_ALIASES = {
+    "order": "Order",
+    "device": "Device",
+    "curve": "Curve",
+    "pickup": "Pickup_A",
+    "pickupa": "Pickup_A",
+    "pickupamps": "Pickup_A",
+    "tms": "TMS",
+    "inst": "Inst_A",
+    "insta": "Inst_A",
+    "instantaneous": "Inst_A",
+    "instantaneousa": "Inst_A",
+    "instantaneouspickup": "Inst_A",
+    "instantaneouspickupa": "Inst_A",
 }
 
 
@@ -109,6 +182,131 @@ def sanitize_relay_settings(settings_df: pd.DataFrame) -> pd.DataFrame:
     return relay_df
 
 
+def initialize_study_case_state() -> None:
+    for key, default_value in DEFAULT_STUDY_CASE.items():
+        if key not in st.session_state:
+            st.session_state[key] = default_value
+
+
+def serialize_study_case_csv() -> bytes:
+    rows = [
+        {
+            "parameter": key,
+            "value": st.session_state.get(key, default_value),
+        }
+        for key, default_value in DEFAULT_STUDY_CASE.items()
+    ]
+    return pd.DataFrame(rows).to_csv(index=False).encode("utf-8")
+
+
+def normalize_relay_column_name(column_name: str) -> str:
+    return (
+        str(column_name)
+        .strip()
+        .lower()
+        .replace(" ", "")
+        .replace("-", "")
+        .replace("_", "")
+        .replace("(", "")
+        .replace(")", "")
+        .replace("/", "")
+    )
+
+
+def parse_study_case_csv(upload_bytes: bytes) -> tuple[bool, str]:
+    try:
+        case_df = pd.read_csv(io.BytesIO(upload_bytes))
+    except Exception as exc:
+        return False, f"Study case import failed: {exc}"
+
+    if case_df.empty:
+        return False, "Study case import failed: file is empty."
+
+    normalized_columns = {str(col).strip().lower(): col for col in case_df.columns}
+    parameter_column = normalized_columns.get("parameter")
+    value_column = normalized_columns.get("value")
+
+    if parameter_column is None or value_column is None:
+        if len(case_df.columns) < 2:
+            return False, "Study case import failed: expected columns 'parameter' and 'value'."
+        parameter_column, value_column = case_df.columns[0], case_df.columns[1]
+
+    parameter_map = {}
+    for _, row in case_df.iterrows():
+        parameter_key = str(row[parameter_column]).strip()
+        if parameter_key:
+            parameter_map[parameter_key] = row[value_column]
+
+    updates: dict[str, object] = {}
+
+    for key, default_value in DEFAULT_STUDY_CASE.items():
+        if key not in parameter_map:
+            continue
+
+        raw_value = parameter_map[key]
+        if pd.isna(raw_value):
+            continue
+
+        try:
+            if key in STUDY_CASE_INT_FIELDS:
+                parsed_value = int(float(raw_value))
+            elif isinstance(default_value, float):
+                parsed_value = float(raw_value)
+            else:
+                parsed_value = str(raw_value).strip()
+        except (ValueError, TypeError):
+            continue
+
+        if key in STUDY_CASE_BOUNDS:
+            lower_bound, upper_bound = STUDY_CASE_BOUNDS[key]
+            parsed_value = max(lower_bound, min(parsed_value, upper_bound))
+            if key in STUDY_CASE_INT_FIELDS:
+                parsed_value = int(parsed_value)
+
+        if key in STUDY_CASE_OPTION_VALUES and parsed_value not in STUDY_CASE_OPTION_VALUES[key]:
+            continue
+
+        updates[key] = parsed_value
+
+    if not updates:
+        return False, "Study case import failed: no recognized parameters found."
+
+    for key, value in updates.items():
+        st.session_state[key] = value
+
+    return True, f"Loaded {len(updates)} study parameters from CSV."
+
+
+def parse_relay_settings_csv(upload_bytes: bytes) -> Tuple[Optional[pd.DataFrame], str]:
+    try:
+        relay_df = pd.read_csv(io.BytesIO(upload_bytes))
+    except Exception as exc:
+        return None, f"Relay settings import failed: {exc}"
+
+    if relay_df.empty:
+        return None, "Relay settings import failed: file is empty."
+
+    rename_map = {}
+    for column_name in relay_df.columns:
+        normalized_name = normalize_relay_column_name(column_name)
+        target_column = RELAY_COLUMN_ALIASES.get(normalized_name)
+        if target_column is not None and target_column not in rename_map.values():
+            rename_map[column_name] = target_column
+
+    relay_df = relay_df.rename(columns=rename_map)
+    missing_columns = [column for column in RELAY_EXPORT_COLUMNS if column not in relay_df.columns]
+
+    if missing_columns:
+        missing_list = ", ".join(missing_columns)
+        return None, f"Relay settings import failed: missing columns [{missing_list}]."
+
+    sanitized_df = sanitize_relay_settings(relay_df[RELAY_EXPORT_COLUMNS])
+    if sanitized_df.empty:
+        return None, "Relay settings import failed: no valid rows after validation."
+
+    return sanitized_df, f"Loaded {len(sanitized_df)} relay settings rows from CSV."
+
+
 st.set_page_config(
     page_title="Protection",
     page_icon="🛡️",
@@ -116,20 +314,52 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+initialize_study_case_state()
+
 st.title("🛡️ Protection")
 st.caption(
     "ETAP-style protection study MVP: network parameters, fault levels, protection grading, and arc-flash screening."
 )
 
 with st.sidebar:
+    st.header("Study Case CSV")
+    st.download_button(
+        "Export study case CSV",
+        data=serialize_study_case_csv(),
+        file_name="study_case.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+    study_case_upload = st.file_uploader(
+        "Import study case CSV",
+        type=["csv"],
+        key="study_case_upload",
+    )
+    if study_case_upload is not None:
+        upload_bytes = study_case_upload.getvalue()
+        upload_digest = hashlib.md5(upload_bytes).hexdigest()
+        if st.session_state.get("study_case_upload_digest") != upload_digest:
+            import_ok, import_message = parse_study_case_csv(upload_bytes)
+            st.session_state["study_case_upload_digest"] = upload_digest
+            st.session_state["study_case_upload_status"] = "success" if import_ok else "error"
+            st.session_state["study_case_upload_message"] = import_message
+
+    if st.session_state.get("study_case_upload_message"):
+        if st.session_state.get("study_case_upload_status") == "success":
+            st.success(st.session_state["study_case_upload_message"])
+        else:
+            st.error(st.session_state["study_case_upload_message"])
+
+    st.markdown("---")
     st.header("Study Controls")
-    project_name = st.text_input("Project name", value="Protection")
+    project_name = st.text_input("Project name", key="project_name")
     grading_margin_s = st.number_input(
         "Target grading margin (s)",
         min_value=0.10,
         max_value=1.00,
-        value=0.30,
         step=0.05,
+        key="grading_margin_s",
     )
     st.caption(f"Active study: {project_name}")
 
@@ -181,40 +411,46 @@ with network_tab:
             "System voltage at study bus (kV)",
             min_value=0.4,
             max_value=66.0,
-            value=11.0,
             step=0.1,
+            key="v_ll_kv",
         )
-        frequency_hz = st.selectbox("Frequency (Hz)", options=[50, 60], index=0)
+        frequency_hz = st.selectbox("Frequency (Hz)", options=[50, 60], key="frequency_hz")
         source_sc_mva = st.number_input(
             "Upstream source short-circuit level (MVA)",
             min_value=10.0,
             max_value=50000.0,
-            value=500.0,
             step=10.0,
+            key="source_sc_mva",
         )
-        source_xr = st.number_input("Source X/R ratio", min_value=0.0, max_value=50.0, value=10.0, step=0.5)
+        source_xr = st.number_input(
+            "Source X/R ratio",
+            min_value=0.0,
+            max_value=50.0,
+            step=0.5,
+            key="source_xr",
+        )
 
     with col2:
         transformer_mva = st.number_input(
             "Transformer rating (MVA)",
             min_value=0.1,
             max_value=1000.0,
-            value=10.0,
             step=0.1,
+            key="transformer_mva",
         )
         transformer_z_pct = st.number_input(
             "Transformer impedance (%Z)",
             min_value=1.0,
             max_value=25.0,
-            value=8.0,
             step=0.1,
+            key="transformer_z_pct",
         )
         transformer_xr = st.number_input(
             "Transformer X/R ratio",
             min_value=0.0,
             max_value=50.0,
-            value=8.0,
             step=0.5,
+            key="transformer_xr",
         )
 
     with col3:
@@ -222,30 +458,42 @@ with network_tab:
             "Feeder length (km)",
             min_value=0.0,
             max_value=100.0,
-            value=0.5,
             step=0.1,
+            key="feeder_length_km",
         )
         feeder_r_ohm_per_km = st.number_input(
             "Feeder R (Ω/km)",
             min_value=0.0,
             max_value=5.0,
-            value=0.08,
             step=0.01,
+            key="feeder_r_ohm_per_km",
         )
         feeder_x_ohm_per_km = st.number_input(
             "Feeder X (Ω/km)",
             min_value=0.0,
             max_value=5.0,
-            value=0.10,
             step=0.01,
+            key="feeder_x_ohm_per_km",
         )
 
     st.markdown("#### Fault Type Factors")
     factor_col1, factor_col2 = st.columns(2)
     with factor_col1:
-        ll_factor = st.slider("Line-Line current factor (vs 3-phase)", 0.50, 1.00, 0.87, 0.01)
+        ll_factor = st.slider(
+            "Line-Line current factor (vs 3-phase)",
+            0.50,
+            1.00,
+            step=0.01,
+            key="ll_factor",
+        )
     with factor_col2:
-        lg_factor = st.slider("Line-Ground current factor (vs 3-phase)", 0.50, 1.20, 0.95, 0.01)
+        lg_factor = st.slider(
+            "Line-Ground current factor (vs 3-phase)",
+            0.50,
+            1.20,
+            step=0.01,
+            key="lg_factor",
+        )
 
 source_z_mag = (v_ll_kv**2) / source_sc_mva
 source_z = split_rx_from_z_magnitude(source_z_mag, source_xr)
@@ -344,9 +592,17 @@ with fault_tab:
 
     study_col1, study_col2 = st.columns(2)
     with study_col1:
-        study_bus = st.selectbox("Select fault location for protection checks", options=fault_df["Bus"].tolist())
+        study_bus = st.selectbox(
+            "Select fault location for protection checks",
+            options=fault_df["Bus"].tolist(),
+            key="study_bus",
+        )
     with study_col2:
-        fault_type = st.selectbox("Select fault type", options=["3-Phase", "Line-Line", "Line-Ground"])
+        fault_type = st.selectbox(
+            "Select fault type",
+            options=["3-Phase", "Line-Line", "Line-Ground"],
+            key="fault_type",
+        )
 
 fault_column_map = {
     "3-Phase": "I_3ph_kA",
@@ -368,6 +624,46 @@ with fault_tab:
 
 with protection_tab:
     st.subheader("Protection Device Settings")
+
+    relay_export_df = sanitize_relay_settings(pd.DataFrame(st.session_state.relay_settings))
+    if relay_export_df.empty:
+        relay_export_df = pd.DataFrame(columns=RELAY_EXPORT_COLUMNS)
+
+    relay_io_col1, relay_io_col2 = st.columns(2)
+    with relay_io_col1:
+        st.download_button(
+            "Export relay settings CSV",
+            data=relay_export_df[RELAY_EXPORT_COLUMNS].to_csv(index=False).encode("utf-8"),
+            file_name="relay_settings.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with relay_io_col2:
+        relay_upload = st.file_uploader(
+            "Import relay settings CSV",
+            type=["csv"],
+            key="relay_settings_upload",
+        )
+
+    if relay_upload is not None:
+        relay_upload_bytes = relay_upload.getvalue()
+        relay_upload_digest = hashlib.md5(relay_upload_bytes).hexdigest()
+        if st.session_state.get("relay_upload_digest") != relay_upload_digest:
+            imported_relay_df, relay_message = parse_relay_settings_csv(relay_upload_bytes)
+            st.session_state["relay_upload_digest"] = relay_upload_digest
+            if imported_relay_df is not None:
+                st.session_state.relay_settings = imported_relay_df
+                st.session_state["relay_upload_status"] = "success"
+            else:
+                st.session_state["relay_upload_status"] = "error"
+            st.session_state["relay_upload_message"] = relay_message
+
+    if st.session_state.get("relay_upload_message"):
+        if st.session_state.get("relay_upload_status") == "success":
+            st.success(st.session_state["relay_upload_message"])
+        else:
+            st.error(st.session_state["relay_upload_message"])
+
     edited_df = st.data_editor(
         st.session_state.relay_settings,
         num_rows="dynamic",
@@ -508,37 +804,46 @@ with arc_tab:
         if finite_times:
             suggested_clearing_time = max(0.05, min(finite_times))
 
+    st.caption(f"Suggested clearing time from fastest relay at selected fault: {suggested_clearing_time:.3f} s")
+
     arc_col1, arc_col2, arc_col3 = st.columns(3)
     with arc_col1:
         bolted_fault_current_ka = st.number_input(
             "Bolted fault current (kA)",
             min_value=0.1,
             max_value=200.0,
-            value=float(round(selected_fault_current_ka, 2)),
             step=0.1,
+            key="bolted_fault_current_ka",
         )
-        arc_current_factor = st.slider("Arc current factor", 0.50, 1.00, 0.85, 0.01)
+        arc_current_factor = st.slider(
+            "Arc current factor",
+            0.50,
+            1.00,
+            step=0.01,
+            key="arc_current_factor",
+        )
 
     with arc_col2:
         clearing_time_s = st.number_input(
             "Clearing time (s)",
             min_value=0.01,
             max_value=2.00,
-            value=float(round(suggested_clearing_time, 3)),
             step=0.01,
+            key="clearing_time_s",
         )
         working_distance_mm = st.number_input(
             "Working distance (mm)",
             min_value=200,
             max_value=2000,
-            value=455,
             step=25,
+            key="working_distance_mm",
         )
 
     with arc_col3:
         enclosure_type = st.selectbox(
             "Enclosure",
             options=["Open air", "Switchboard", "Metal-clad cubicle"],
+            key="enclosure_type",
         )
         enclosure_factor_map = {
             "Open air": 1.0,
