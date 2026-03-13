@@ -1,6 +1,8 @@
 import hashlib
 import io
+import json
 import math
+from pathlib import Path
 from typing import Optional, Tuple
 
 import pandas as pd
@@ -15,6 +17,34 @@ CURVE_CONSTANTS = {
 }
 
 RELAY_EXPORT_COLUMNS = ["Order", "Device", "Curve", "Pickup_A", "TMS", "Inst_A"]
+APP_STATE_FILE = Path(".streamlit/last_entered_state.json")
+
+BASELINE_RELAY_SETTINGS = [
+    {
+        "Order": 1,
+        "Device": "Feeder Relay",
+        "Curve": "IEC Standard Inverse",
+        "Pickup_A": 300.0,
+        "TMS": 0.10,
+        "Inst_A": 2500.0,
+    },
+    {
+        "Order": 2,
+        "Device": "Incomer Relay",
+        "Curve": "IEC Very Inverse",
+        "Pickup_A": 500.0,
+        "TMS": 0.20,
+        "Inst_A": 5000.0,
+    },
+    {
+        "Order": 3,
+        "Device": "Source Relay",
+        "Curve": "IEC Very Inverse",
+        "Pickup_A": 700.0,
+        "TMS": 0.35,
+        "Inst_A": 0.0,
+    },
+]
 
 DEFAULT_NETWORK_PRESET = {
     "project_name": "Protection - 33/11kV Network",
@@ -204,7 +234,11 @@ def arc_flash_category(incident_energy_cal_cm2: float) -> str:
 
 def sanitize_relay_settings(settings_df: pd.DataFrame) -> pd.DataFrame:
     if settings_df.empty:
-        return settings_df
+        return pd.DataFrame(columns=RELAY_EXPORT_COLUMNS)
+
+    required_columns = set(RELAY_EXPORT_COLUMNS)
+    if not required_columns.issubset(set(settings_df.columns)):
+        return pd.DataFrame(columns=RELAY_EXPORT_COLUMNS)
 
     relay_df = settings_df.copy()
     relay_df["Order"] = pd.to_numeric(relay_df["Order"], errors="coerce")
@@ -219,18 +253,112 @@ def sanitize_relay_settings(settings_df: pd.DataFrame) -> pd.DataFrame:
     relay_df = relay_df.dropna(subset=["Device", "Order", "Pickup_A", "TMS"])
     relay_df["Order"] = relay_df["Order"].astype(int)
     relay_df["Device"] = relay_df["Device"].astype(str)
-    return relay_df
+    return relay_df[RELAY_EXPORT_COLUMNS]
 
 
-def initialize_study_case_state() -> None:
+def default_relay_settings_df() -> pd.DataFrame:
+    return pd.DataFrame(BASELINE_RELAY_SETTINGS)[RELAY_EXPORT_COLUMNS]
+
+
+def coerce_study_case_value(key: str, raw_value: object, default_value: object) -> object:
+    if raw_value is None:
+        return default_value
+
+    try:
+        if bool(pd.isna(raw_value)):
+            return default_value
+    except Exception:
+        pass
+
+    try:
+        if key in STUDY_CASE_INT_FIELDS:
+            parsed_value = int(float(raw_value))
+        elif isinstance(default_value, float):
+            parsed_value = float(raw_value)
+        else:
+            parsed_value = str(raw_value).strip()
+    except (ValueError, TypeError):
+        return default_value
+
+    if key in STUDY_CASE_BOUNDS:
+        lower_bound, upper_bound = STUDY_CASE_BOUNDS[key]
+        parsed_value = max(lower_bound, min(parsed_value, upper_bound))
+        if key in STUDY_CASE_INT_FIELDS:
+            parsed_value = int(parsed_value)
+
+    if key in STUDY_CASE_OPTION_VALUES and parsed_value not in STUDY_CASE_OPTION_VALUES[key]:
+        return default_value
+
+    return parsed_value
+
+
+def load_persisted_state() -> dict:
+    if not APP_STATE_FILE.exists():
+        return {}
+
+    try:
+        with APP_STATE_FILE.open("r", encoding="utf-8") as state_file:
+            state_data = json.load(state_file)
+        if isinstance(state_data, dict):
+            return state_data
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    return {}
+
+
+def persist_last_entered_state() -> None:
+    study_case_data = {
+        key: st.session_state.get(key, default_value)
+        for key, default_value in DEFAULT_STUDY_CASE.items()
+    }
+
+    relay_df = sanitize_relay_settings(pd.DataFrame(st.session_state.get("relay_settings", pd.DataFrame())))
+    if relay_df.empty:
+        relay_df = default_relay_settings_df()
+
+    payload = {
+        "study_case": study_case_data,
+        "relay_settings": relay_df[RELAY_EXPORT_COLUMNS].to_dict(orient="records"),
+    }
+
+    try:
+        APP_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with APP_STATE_FILE.open("w", encoding="utf-8") as state_file:
+            json.dump(payload, state_file, indent=2)
+    except OSError:
+        return
+
+
+def initialize_app_state() -> None:
+    persisted_state = load_persisted_state()
+    persisted_study_case = persisted_state.get("study_case", {}) if isinstance(persisted_state, dict) else {}
+
     for key, default_value in DEFAULT_STUDY_CASE.items():
         if key not in st.session_state:
-            st.session_state[key] = default_value
+            st.session_state[key] = coerce_study_case_value(
+                key,
+                persisted_study_case.get(key, default_value),
+                default_value,
+            )
+
+    if "relay_settings" not in st.session_state:
+        relay_rows = persisted_state.get("relay_settings", BASELINE_RELAY_SETTINGS)
+        relay_df = pd.DataFrame(relay_rows)
+        sanitized_df = sanitize_relay_settings(relay_df)
+        if sanitized_df.empty:
+            sanitized_df = default_relay_settings_df()
+        st.session_state.relay_settings = sanitized_df[RELAY_EXPORT_COLUMNS]
 
 
 def load_network_preset() -> None:
     for key, value in DEFAULT_NETWORK_PRESET.items():
         st.session_state[key] = value
+
+
+def restore_original_defaults() -> None:
+    load_network_preset()
+    st.session_state.relay_settings = default_relay_settings_df()
 
 
 def serialize_study_case_csv() -> bytes:
@@ -359,7 +487,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-initialize_study_case_state()
+initialize_app_state()
 
 st.title("🛡️ Protection")
 st.caption(
@@ -407,43 +535,14 @@ with st.sidebar:
         key="grading_margin_s",
     )
 
-    if st.button("Load 33/11kV default network", use_container_width=True):
-        load_network_preset()
+    if st.button("Restore original defaults", use_container_width=True):
+        restore_original_defaults()
+        persist_last_entered_state()
         st.session_state["study_case_upload_status"] = "success"
-        st.session_state["study_case_upload_message"] = "Loaded 33/11kV default network parameters."
+        st.session_state["study_case_upload_message"] = "Restored original default network and relay settings."
         st.rerun()
 
     st.caption(f"Active study: {project_name}")
-
-if "relay_settings" not in st.session_state:
-    st.session_state.relay_settings = pd.DataFrame(
-        [
-            {
-                "Order": 1,
-                "Device": "Feeder Relay",
-                "Curve": "IEC Standard Inverse",
-                "Pickup_A": 300.0,
-                "TMS": 0.10,
-                "Inst_A": 2500.0,
-            },
-            {
-                "Order": 2,
-                "Device": "Incomer Relay",
-                "Curve": "IEC Very Inverse",
-                "Pickup_A": 500.0,
-                "TMS": 0.20,
-                "Inst_A": 5000.0,
-            },
-            {
-                "Order": 3,
-                "Device": "Source Relay",
-                "Curve": "IEC Very Inverse",
-                "Pickup_A": 700.0,
-                "TMS": 0.35,
-                "Inst_A": 0.0,
-            },
-        ]
-    )
 
 network_tab, fault_tab, protection_tab, arc_tab = st.tabs(
     [
@@ -1042,3 +1141,5 @@ with arc_tab:
         st.metric("Arc flash boundary", f"{arc_flash_boundary_mm:.0f} mm")
 
     st.info(arc_flash_category(incident_energy_cal_cm2))
+
+persist_last_entered_state()

@@ -13,6 +13,8 @@ An ETAP-style web GUI prototype built with [Streamlit](https://streamlit.io/) an
 - Displays operating times and grading margins between downstream/upstream devices.
 - Provides a simplified arc-flash screening estimate (arcing current, incident energy, boundary).
 - Supports CSV import/export for study cases and relay settings.
+- Remembers last entered study/relay data as startup defaults.
+- Includes a Restore Original Defaults action to return to the built-in base case.
 
 ## Scope Note
 
