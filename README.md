@@ -1,5 +1,7 @@
 # Protection
 
+Current release: Rev 0.1.
+
 [![CI](https://github.com/flyingdave/Protection/actions/workflows/ci.yml/badge.svg)](https://github.com/flyingdave/Protection/actions/workflows/ci.yml)
 
 An ETAP-style web GUI prototype built with [Streamlit](https://streamlit.io/) and Python.

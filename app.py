@@ -19,6 +19,7 @@ CURVE_CONSTANTS = {
 
 RELAY_EXPORT_COLUMNS = ["Order", "Device", "Curve", "Pickup_A", "TMS", "Inst_A"]
 APP_STATE_FILE = Path(".streamlit/last_entered_state.json")
+APP_REVISION = "Rev 0.1"
 
 CABLE_SEQUENCE_LIBRARY = {
     "33kV 0.25sqin cu HSL": {
@@ -599,7 +600,7 @@ def parse_relay_settings_csv(upload_bytes: bytes) -> Tuple[Optional[pd.DataFrame
 
 
 st.set_page_config(
-    page_title="Protection",
+    page_title=f"Protection {APP_REVISION}",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -609,7 +610,7 @@ initialize_app_state()
 
 st.title("🛡️ Protection")
 st.caption(
-    "ETAP-style protection study MVP: network parameters, fault levels, protection grading, and arc-flash screening."
+    f"{APP_REVISION} · ETAP-style protection study MVP: network parameters, fault levels, protection grading, and arc-flash screening."
 )
 
 with st.sidebar:
