@@ -1167,7 +1167,7 @@ with protection_tab:
                     pickup_a=float(row["Pickup_A"]),
                     tms=float(row["TMS"]),
                     curve_name=str(row["Curve"]),
-                    inst_pickup_a=float(row["Inst_A"]),
+                    inst_pickup_a=0.0,  # ignore inst threshold so IDMT curve is continuous
                 )
                 for value in current_points
             ]
@@ -1185,14 +1185,16 @@ with protection_tab:
         if tcc_long_df.empty:
             st.warning("No valid relay curve points available for log-log plotting.")
         else:
-            tcc_chart = (
+            x_scale = alt.Scale(type="log", domain=[min_pickup * 0.9, max_current])
+
+            idmt_layer = (
                 alt.Chart(tcc_long_df)
                 .mark_line()
                 .encode(
                     x=alt.X(
                         "Current_A:Q",
                         title="Current (A)",
-                        scale=alt.Scale(type="log", domain=[min_pickup * 0.9, max_current]),
+                        scale=x_scale,
                         axis=alt.Axis(grid=True),
                     ),
                     y=alt.Y(
@@ -1208,9 +1210,39 @@ with protection_tab:
                         alt.Tooltip("Operate_s:Q", title="Time (s)", format=".4f"),
                     ],
                 )
-                .properties(height=420)
-                .configure_axis(grid=True)
             )
+
+            # Dashed vertical rules at instantaneous pickup currents
+            inst_df = (
+                relay_df[relay_df["Inst_A"] > 0][["Device", "Inst_A"]]
+                .rename(columns={"Inst_A": "Current_A"})
+                .copy()
+            )
+            if not inst_df.empty:
+                inst_layer = (
+                    alt.Chart(inst_df)
+                    .mark_rule(strokeDash=[4, 4], strokeWidth=1.5)
+                    .encode(
+                        x=alt.X("Current_A:Q", scale=x_scale),
+                        color=alt.Color("Device:N", title="Device"),
+                        tooltip=[
+                            alt.Tooltip("Device:N", title="Device"),
+                            alt.Tooltip("Current_A:Q", title="Inst. Pickup (A)", format=".0f"),
+                        ],
+                    )
+                )
+                tcc_chart = (
+                    alt.layer(idmt_layer, inst_layer)
+                    .properties(height=420)
+                    .configure_axis(grid=True)
+                )
+            else:
+                tcc_chart = (
+                    idmt_layer
+                    .properties(height=420)
+                    .configure_axis(grid=True)
+                )
+
             st.altair_chart(tcc_chart, use_container_width=True)
 
 with arc_tab:
