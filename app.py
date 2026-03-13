@@ -1069,10 +1069,36 @@ with protection_tab:
         st.warning("Add at least one valid protection device setting to run grading checks.")
         relay_results_df = pd.DataFrame()
     else:
+        min_pickup = max(float(relay_df["Pickup_A"].min()) * 1.05, 1.0)
+        max_fault_current_a = incomer_fault["I_3ph_kA"] * 1000
+        max_current = max(
+            max_fault_current_a * 2.0,
+            float(relay_df["Inst_A"].max()) * 1.20,
+            min_pickup * 5,
+        )
+
+        slider_min_a = max(1, int(math.floor(min_pickup)))
+        slider_max_a = max(slider_min_a + 1, int(math.ceil(max_current)))
+        slider_default_a = int(min(max(selected_fault_current_a, slider_min_a), slider_max_a))
+        slider_step_a = max(1, int((slider_max_a - slider_min_a) / 200))
+
+        grading_current_a = float(
+            st.slider(
+                "Grading current on TCC graph (A)",
+                min_value=slider_min_a,
+                max_value=slider_max_a,
+                value=slider_default_a,
+                step=slider_step_a,
+            )
+        )
+        st.caption(
+            f"Relay operating times and grading margins are evaluated at {grading_current_a / 1000:.3f} kA."
+        )
+
         relay_results = []
         for _, row in relay_df.iterrows():
             operate_time_s = calc_relay_time_s(
-                current_a=selected_fault_current_a,
+                current_a=grading_current_a,
                 pickup_a=float(row["Pickup_A"]),
                 tms=float(row["TMS"]),
                 curve_name=str(row["Curve"]),
@@ -1093,7 +1119,7 @@ with protection_tab:
 
         relay_results_df = pd.DataFrame(relay_results).sort_values("Order").reset_index(drop=True)
 
-        st.markdown("#### Relay Operating Times at Selected Fault")
+        st.markdown("#### Relay Operating Times at Selected Current")
         st.dataframe(
             relay_results_df[
                 ["Order", "Device", "Curve", "Pickup_A", "TMS", "Inst_A", "Operate_display"]
@@ -1138,15 +1164,8 @@ with protection_tab:
         elif not graded_df.empty:
             st.success("All checked relay pairs meet the grading margin target.")
         else:
-            st.info("No relay pairs qualified for grading checks at this fault level.")
+            st.info("No relay pairs qualified for grading checks at this selected current.")
 
-        min_pickup = max(float(relay_df["Pickup_A"].min()) * 1.05, 1.0)
-        max_fault_current_a = incomer_fault["I_3ph_kA"] * 1000
-        max_current = max(
-            max_fault_current_a * 2.0,
-            float(relay_df["Inst_A"].max()) * 1.20,
-            min_pickup * 5,
-        )
         current_points = [
             min_pickup * ((max_current / min_pickup) ** (idx / 79))
             for idx in range(80)
@@ -1160,7 +1179,7 @@ with protection_tab:
                     pickup_a=float(row["Pickup_A"]),
                     tms=float(row["TMS"]),
                     curve_name=str(row["Curve"]),
-                    inst_pickup_a=0.0,  # ignore inst threshold so IDMT curve is continuous
+                    inst_pickup_a=0.0,
                 )
                 for value in current_points
             ]
@@ -1205,12 +1224,18 @@ with protection_tab:
                 )
             )
 
-            # Dashed vertical rules at instantaneous pickup currents
             inst_df = (
                 relay_df[relay_df["Inst_A"] > 0][["Device", "Inst_A"]]
                 .rename(columns={"Inst_A": "Current_A"})
                 .copy()
             )
+
+            grading_current_df = pd.DataFrame(
+                {"Current_A": [grading_current_a], "Marker": ["Selected grading current"]}
+            )
+
+            layers = [idmt_layer]
+
             if not inst_df.empty:
                 inst_layer = (
                     alt.Chart(inst_df)
@@ -1224,17 +1249,26 @@ with protection_tab:
                         ],
                     )
                 )
-                tcc_chart = (
-                    alt.layer(idmt_layer, inst_layer)
-                    .properties(height=420)
-                    .configure_axis(grid=True)
+                layers.append(inst_layer)
+
+            grading_current_layer = (
+                alt.Chart(grading_current_df)
+                .mark_rule(strokeWidth=2)
+                .encode(
+                    x=alt.X("Current_A:Q", scale=x_scale),
+                    tooltip=[
+                        alt.Tooltip("Marker:N", title="Marker"),
+                        alt.Tooltip("Current_A:Q", title="Current (A)", format=".0f"),
+                    ],
                 )
-            else:
-                tcc_chart = (
-                    idmt_layer
-                    .properties(height=420)
-                    .configure_axis(grid=True)
-                )
+            )
+            layers.append(grading_current_layer)
+
+            tcc_chart = (
+                alt.layer(*layers)
+                .properties(height=420)
+                .configure_axis(grid=True)
+            )
 
             st.altair_chart(tcc_chart, use_container_width=True)
 
