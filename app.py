@@ -19,6 +19,63 @@ CURVE_CONSTANTS = {
 RELAY_EXPORT_COLUMNS = ["Order", "Device", "Curve", "Pickup_A", "TMS", "Inst_A"]
 APP_STATE_FILE = Path(".streamlit/last_entered_state.json")
 
+CABLE_SEQUENCE_LIBRARY = {
+    "33kV 0.25sqin cu HSL": {
+        "z1": complex(0.120, 0.105),
+        "z2": complex(0.120, 0.105),
+        "z0": complex(0.430, 0.310),
+        "note": "Legacy HSL estimate from typical utility-era data.",
+    },
+    "33kV 300mm2 Al": {
+        "z1": complex(0.100, 0.100),
+        "z2": complex(0.100, 0.100),
+        "z0": complex(0.360, 0.280),
+        "note": "Typical 33kV 300mm² aluminium underground cable estimate.",
+    },
+    "11kV PILC 3c 300mm2 Cu": {
+        "z1": complex(0.070, 0.085),
+        "z2": complex(0.070, 0.085),
+        "z0": complex(0.280, 0.240),
+        "note": "Legacy PILC estimate.",
+    },
+    "11kV XLPE 3c 300mm2 Cu": {
+        "z1": complex(0.075, 0.090),
+        "z2": complex(0.075, 0.090),
+        "z0": complex(0.260, 0.220),
+        "note": "Typical XLPE estimate.",
+    },
+    "11kV 3c 800mm2 Cu": {
+        "z1": complex(0.028, 0.075),
+        "z2": complex(0.028, 0.075),
+        "z0": complex(0.120, 0.200),
+        "note": "Large copper cable estimate.",
+    },
+    "11kV PLY 3c 240mm2 Cu": {
+        "z1": complex(0.095, 0.090),
+        "z2": complex(0.095, 0.090),
+        "z0": complex(0.330, 0.270),
+        "note": "Legacy PLY cable estimate.",
+    },
+    "Default Cable": {
+        "z1": complex(0.100, 0.100),
+        "z2": complex(0.100, 0.100),
+        "z0": complex(0.350, 0.300),
+        "note": "Fallback default where site data is unavailable.",
+    },
+}
+
+HV_CABLE_OPTIONS = ["33kV 0.25sqin cu HSL", "33kV 300mm2 Al", "Default Cable"]
+LV_CABLE_OPTIONS = [
+    "11kV PILC 3c 300mm2 Cu",
+    "11kV XLPE 3c 300mm2 Cu",
+    "11kV 3c 800mm2 Cu",
+    "11kV PLY 3c 240mm2 Cu",
+    "Default Cable",
+]
+
+SOURCE_Z0_FACTOR = 3.0
+TRANSFORMER_Z0_FACTOR = 1.0
+
 BASELINE_RELAY_SETTINGS = [
     {
         "Order": 1,
@@ -56,21 +113,16 @@ DEFAULT_NETWORK_PRESET = {
     "source_xr": 10.0,
     "reactor_ohm": 3.23,
     "hv_cable_length_km": 3.0,
-    "hv_cable_r_ohm_per_km": 0.09,
-    "hv_cable_x_ohm_per_km": 0.10,
+    "hv_cable_type": "33kV 0.25sqin cu HSL",
     "transformer_hv_kv": 33.0,
     "transformer_lv_kv": 11.0,
     "transformer_mva": 13.5,
     "transformer_z_pct": 7.2,
     "transformer_xr": 8.0,
     "lv_cable_length_km": 0.01,
-    "lv_cable_r_ohm_per_km": 0.08,
-    "lv_cable_x_ohm_per_km": 0.10,
+    "lv_cable_type": "11kV XLPE 3c 300mm2 Cu",
     "feeder_length_km": 0.5,
-    "feeder_r_ohm_per_km": 0.08,
-    "feeder_x_ohm_per_km": 0.10,
-    "ll_factor": 0.87,
-    "lg_factor": 0.95,
+    "feeder_cable_type": "Default Cable",
     "study_bus": "11kV Transformer Busbar",
     "fault_type": "3-Phase",
     "bolted_fault_current_ka": 10.0,
@@ -105,6 +157,9 @@ STUDY_CASE_OPTION_VALUES = {
     "study_bus": {"11kV Transformer Busbar", "11kV Remote Busbar"},
     "fault_type": {"3-Phase", "Line-Line", "Line-Ground"},
     "enclosure_type": {"Open air", "Switchboard", "Metal-clad cubicle"},
+    "hv_cable_type": set(HV_CABLE_OPTIONS),
+    "lv_cable_type": set(LV_CABLE_OPTIONS),
+    "feeder_cable_type": set(LV_CABLE_OPTIONS),
 }
 
 STUDY_CASE_BOUNDS = {
@@ -115,21 +170,13 @@ STUDY_CASE_BOUNDS = {
     "source_xr": (0.0, 50.0),
     "reactor_ohm": (0.0, 50.0),
     "hv_cable_length_km": (0.0, 100.0),
-    "hv_cable_r_ohm_per_km": (0.0, 5.0),
-    "hv_cable_x_ohm_per_km": (0.0, 5.0),
     "transformer_hv_kv": (1.0, 400.0),
     "transformer_lv_kv": (0.4, 66.0),
     "transformer_mva": (0.1, 1000.0),
     "transformer_z_pct": (1.0, 25.0),
     "transformer_xr": (0.0, 50.0),
     "lv_cable_length_km": (0.0, 20.0),
-    "lv_cable_r_ohm_per_km": (0.0, 5.0),
-    "lv_cable_x_ohm_per_km": (0.0, 5.0),
     "feeder_length_km": (0.0, 100.0),
-    "feeder_r_ohm_per_km": (0.0, 5.0),
-    "feeder_x_ohm_per_km": (0.0, 5.0),
-    "ll_factor": (0.50, 1.00),
-    "lg_factor": (0.50, 1.20),
     "bolted_fault_current_ka": (0.1, 200.0),
     "arc_current_factor": (0.50, 1.00),
     "clearing_time_s": (0.01, 2.00),
@@ -166,24 +213,39 @@ def split_rx_from_z_magnitude(z_ohm: float, x_over_r: float) -> complex:
     return complex(resistance, reactance)
 
 
-def calc_fault_values(v_ll_kv: float, z_total: complex, ll_factor: float, lg_factor: float) -> dict:
-    z_magnitude = abs(z_total)
-    if z_magnitude <= 0 or v_ll_kv <= 0:
+def cable_sequence_impedance_per_km(cable_type: str) -> dict:
+    return CABLE_SEQUENCE_LIBRARY.get(cable_type, CABLE_SEQUENCE_LIBRARY["Default Cable"])
+
+
+def format_complex_ohm(z_value: complex) -> str:
+    return f"{z_value.real:.4f} + j{z_value.imag:.4f}"
+
+
+def calc_fault_values(v_ll_kv: float, z1_total: complex, z2_total: complex, z0_total: complex) -> dict:
+    z1_magnitude = abs(z1_total)
+    z_ll = z1_total + z2_total
+    z_lg = z1_total + z2_total + z0_total
+
+    if z1_magnitude <= 0 or v_ll_kv <= 0:
         return {
-            "Z_total_ohm": 0.0,
+            "Z1_total_ohm": 0.0,
+            "Z2_total_ohm": 0.0,
+            "Z0_total_ohm": 0.0,
             "I_3ph_kA": math.inf,
             "I_LL_kA": math.inf,
             "I_LG_kA": math.inf,
             "Fault_MVA": math.inf,
         }
 
-    i_3ph_ka = v_ll_kv / (math.sqrt(3) * z_magnitude)
-    i_ll_ka = i_3ph_ka * ll_factor
-    i_lg_ka = i_3ph_ka * lg_factor
+    i_3ph_ka = v_ll_kv / (math.sqrt(3) * z1_magnitude)
+    i_ll_ka = (v_ll_kv / abs(z_ll)) if abs(z_ll) > 0 else math.inf
+    i_lg_ka = (math.sqrt(3) * v_ll_kv / abs(z_lg)) if abs(z_lg) > 0 else math.inf
     fault_mva = math.sqrt(3) * v_ll_kv * i_3ph_ka
 
     return {
-        "Z_total_ohm": z_magnitude,
+        "Z1_total_ohm": abs(z1_total),
+        "Z2_total_ohm": abs(z2_total),
+        "Z0_total_ohm": abs(z0_total),
         "I_3ph_kA": i_3ph_ka,
         "I_LL_kA": i_ll_ka,
         "I_LG_kA": i_lg_ka,
@@ -559,8 +621,8 @@ with network_tab:
     st.markdown("#### One-line arrangement (default template)")
     st.caption(" → ".join(NETWORK_ARRANGEMENT))
     st.info(
-        "Cable conductor type is represented through entered R/X values. "
-        "Update cable Ω/km values from your manufacturer data for final studies."
+        "Legacy cable sequence data uses best-available typical values for old assets. "
+        "Where detailed test data is unavailable, Z2 is taken equal to Z1 and typical Z0 values are used."
     )
 
     col1, col2, col3 = st.columns(3)
@@ -602,19 +664,10 @@ with network_tab:
             step=0.1,
             key="hv_cable_length_km",
         )
-        hv_cable_r_ohm_per_km = st.number_input(
-            "33kV cable R (Ω/km)",
-            min_value=0.0,
-            max_value=5.0,
-            step=0.01,
-            key="hv_cable_r_ohm_per_km",
-        )
-        hv_cable_x_ohm_per_km = st.number_input(
-            "33kV cable X (Ω/km)",
-            min_value=0.0,
-            max_value=5.0,
-            step=0.01,
-            key="hv_cable_x_ohm_per_km",
+        hv_cable_type = st.selectbox(
+            "33kV cable type",
+            options=HV_CABLE_OPTIONS,
+            key="hv_cable_type",
         )
 
     with col2:
@@ -661,19 +714,10 @@ with network_tab:
             step=0.01,
             key="lv_cable_length_km",
         )
-        lv_cable_r_ohm_per_km = st.number_input(
-            "11kV cable R (Ω/km)",
-            min_value=0.0,
-            max_value=5.0,
-            step=0.01,
-            key="lv_cable_r_ohm_per_km",
-        )
-        lv_cable_x_ohm_per_km = st.number_input(
-            "11kV cable X (Ω/km)",
-            min_value=0.0,
-            max_value=5.0,
-            step=0.01,
-            key="lv_cable_x_ohm_per_km",
+        lv_cable_type = st.selectbox(
+            "11kV transformer cable type",
+            options=LV_CABLE_OPTIONS,
+            key="lv_cable_type",
         )
 
     with col3:
@@ -693,38 +737,10 @@ with network_tab:
             step=0.1,
             key="feeder_length_km",
         )
-        feeder_r_ohm_per_km = st.number_input(
-            "Feeder R (Ω/km)",
-            min_value=0.0,
-            max_value=5.0,
-            step=0.01,
-            key="feeder_r_ohm_per_km",
-        )
-        feeder_x_ohm_per_km = st.number_input(
-            "Feeder X (Ω/km)",
-            min_value=0.0,
-            max_value=5.0,
-            step=0.01,
-            key="feeder_x_ohm_per_km",
-        )
-
-    st.markdown("#### Fault Type Factors")
-    factor_col1, factor_col2 = st.columns(2)
-    with factor_col1:
-        ll_factor = st.slider(
-            "Line-Line current factor (vs 3-phase)",
-            0.50,
-            1.00,
-            step=0.01,
-            key="ll_factor",
-        )
-    with factor_col2:
-        lg_factor = st.slider(
-            "Line-Ground current factor (vs 3-phase)",
-            0.50,
-            1.20,
-            step=0.01,
-            key="lg_factor",
+        feeder_cable_type = st.selectbox(
+            "11kV feeder cable type",
+            options=LV_CABLE_OPTIONS,
+            key="feeder_cable_type",
         )
 
 if st.session_state.get("study_bus") not in STUDY_CASE_OPTION_VALUES["study_bus"]:
@@ -732,108 +748,188 @@ if st.session_state.get("study_bus") not in STUDY_CASE_OPTION_VALUES["study_bus"
 
 source_z_hv = split_rx_from_z_magnitude((source_v_kv**2) / source_sc_mva, source_xr)
 source_to_study_factor = (v_ll_kv / source_v_kv) ** 2 if source_v_kv > 0 else 0.0
-source_z = source_z_hv * source_to_study_factor
+source_z1 = source_z_hv * source_to_study_factor
+source_z2 = source_z1
+source_z0 = source_z1 * SOURCE_Z0_FACTOR
 
-reactor_z_hv = complex(0.0, reactor_ohm)
-reactor_z = reactor_z_hv * source_to_study_factor
+reactor_z1 = complex(0.0, reactor_ohm) * source_to_study_factor
+reactor_z2 = reactor_z1
+reactor_z0 = reactor_z1
 
-hv_cable_z_hv = complex(
-    hv_cable_length_km * hv_cable_r_ohm_per_km,
-    hv_cable_length_km * hv_cable_x_ohm_per_km,
-)
-hv_cable_z = hv_cable_z_hv * source_to_study_factor
+hv_cable_data = cable_sequence_impedance_per_km(hv_cable_type)
+hv_cable_z1 = hv_cable_length_km * hv_cable_data["z1"] * source_to_study_factor
+hv_cable_z2 = hv_cable_length_km * hv_cable_data["z2"] * source_to_study_factor
+hv_cable_z0 = hv_cable_length_km * hv_cable_data["z0"] * source_to_study_factor
 
 transformer_z_lv = split_rx_from_z_magnitude(
     (transformer_z_pct / 100) * ((transformer_lv_kv**2) / transformer_mva),
     transformer_xr,
 )
 lv_to_study_factor = (v_ll_kv / transformer_lv_kv) ** 2 if transformer_lv_kv > 0 else 0.0
-transformer_z = transformer_z_lv * lv_to_study_factor
+transformer_z1 = transformer_z_lv * lv_to_study_factor
+transformer_z2 = transformer_z1
+transformer_z0 = transformer_z1 * TRANSFORMER_Z0_FACTOR
 
-lv_cable_z_lv = complex(
-    lv_cable_length_km * lv_cable_r_ohm_per_km,
-    lv_cable_length_km * lv_cable_x_ohm_per_km,
-)
-lv_cable_z = lv_cable_z_lv * lv_to_study_factor
+lv_cable_data = cable_sequence_impedance_per_km(lv_cable_type)
+lv_cable_z1 = lv_cable_length_km * lv_cable_data["z1"] * lv_to_study_factor
+lv_cable_z2 = lv_cable_length_km * lv_cable_data["z2"] * lv_to_study_factor
+lv_cable_z0 = lv_cable_length_km * lv_cable_data["z0"] * lv_to_study_factor
 
-feeder_z = complex(
-    feeder_length_km * feeder_r_ohm_per_km,
-    feeder_length_km * feeder_x_ohm_per_km,
-)
+feeder_cable_data = cable_sequence_impedance_per_km(feeder_cable_type)
+feeder_z1 = feeder_length_km * feeder_cable_data["z1"]
+feeder_z2 = feeder_length_km * feeder_cable_data["z2"]
+feeder_z0 = feeder_length_km * feeder_cable_data["z0"]
 
-z_incomer = source_z + reactor_z + hv_cable_z + transformer_z + lv_cable_z
-z_load = z_incomer + feeder_z
+z1_incomer = source_z1 + reactor_z1 + hv_cable_z1 + transformer_z1 + lv_cable_z1
+z2_incomer = source_z2 + reactor_z2 + hv_cable_z2 + transformer_z2 + lv_cable_z2
+z0_incomer = source_z0 + reactor_z0 + hv_cable_z0 + transformer_z0 + lv_cable_z0
 
-incomer_fault = calc_fault_values(v_ll_kv, z_incomer, ll_factor, lg_factor)
-load_fault = calc_fault_values(v_ll_kv, z_load, ll_factor, lg_factor)
+z1_load = z1_incomer + feeder_z1
+z2_load = z2_incomer + feeder_z2
+z0_load = z0_incomer + feeder_z0
+
+incomer_fault = calc_fault_values(v_ll_kv, z1_incomer, z2_incomer, z0_incomer)
+load_fault = calc_fault_values(v_ll_kv, z1_load, z2_load, z0_load)
 
 with network_tab:
-    st.markdown("#### Equivalent Impedance Build-Up")
+    st.markdown("#### Selected Cable Sequence Data (Ω/km)")
+    cable_df = pd.DataFrame(
+        [
+            {
+                "Segment": "33kV cable",
+                "Type": hv_cable_type,
+                "Z1": format_complex_ohm(hv_cable_data["z1"]),
+                "Z2": format_complex_ohm(hv_cable_data["z2"]),
+                "Z0": format_complex_ohm(hv_cable_data["z0"]),
+            },
+            {
+                "Segment": "11kV transformer cable",
+                "Type": lv_cable_type,
+                "Z1": format_complex_ohm(lv_cable_data["z1"]),
+                "Z2": format_complex_ohm(lv_cable_data["z2"]),
+                "Z0": format_complex_ohm(lv_cable_data["z0"]),
+            },
+            {
+                "Segment": "11kV feeder cable",
+                "Type": feeder_cable_type,
+                "Z1": format_complex_ohm(feeder_cable_data["z1"]),
+                "Z2": format_complex_ohm(feeder_cable_data["z2"]),
+                "Z0": format_complex_ohm(feeder_cable_data["z0"]),
+            },
+        ]
+    )
+    st.dataframe(cable_df, use_container_width=True)
+
+    st.markdown("#### Cable Library (Best Available Legacy Data, Ω/km)")
+    cable_library_df = pd.DataFrame(
+        [
+            {
+                "Cable Type": cable_type,
+                "Z1": format_complex_ohm(cable_data["z1"]),
+                "Z2": format_complex_ohm(cable_data["z2"]),
+                "Z0": format_complex_ohm(cable_data["z0"]),
+                "Data basis": cable_data["note"],
+            }
+            for cable_type, cable_data in CABLE_SEQUENCE_LIBRARY.items()
+        ]
+    )
+    st.dataframe(cable_library_df, use_container_width=True)
+
+    st.markdown("#### Sequence Impedance Build-Up (Referred to Study Voltage)")
     impedance_df = pd.DataFrame(
         [
             {
                 "Element": "Source equivalent (referred)",
-                "R (Ω)": source_z.real,
-                "X (Ω)": source_z.imag,
-                "|Z| (Ω)": abs(source_z),
+                "Z1 (Ω)": format_complex_ohm(source_z1),
+                "Z2 (Ω)": format_complex_ohm(source_z2),
+                "Z0 (Ω)": format_complex_ohm(source_z0),
+                "|Z1|": abs(source_z1),
+                "|Z2|": abs(source_z2),
+                "|Z0|": abs(source_z0),
             },
             {
                 "Element": "33kV reactor (referred)",
-                "R (Ω)": reactor_z.real,
-                "X (Ω)": reactor_z.imag,
-                "|Z| (Ω)": abs(reactor_z),
+                "Z1 (Ω)": format_complex_ohm(reactor_z1),
+                "Z2 (Ω)": format_complex_ohm(reactor_z2),
+                "Z0 (Ω)": format_complex_ohm(reactor_z0),
+                "|Z1|": abs(reactor_z1),
+                "|Z2|": abs(reactor_z2),
+                "|Z0|": abs(reactor_z0),
             },
             {
                 "Element": "33kV cable (referred)",
-                "R (Ω)": hv_cable_z.real,
-                "X (Ω)": hv_cable_z.imag,
-                "|Z| (Ω)": abs(hv_cable_z),
+                "Z1 (Ω)": format_complex_ohm(hv_cable_z1),
+                "Z2 (Ω)": format_complex_ohm(hv_cable_z2),
+                "Z0 (Ω)": format_complex_ohm(hv_cable_z0),
+                "|Z1|": abs(hv_cable_z1),
+                "|Z2|": abs(hv_cable_z2),
+                "|Z0|": abs(hv_cable_z0),
             },
             {
                 "Element": "Transformer equivalent (referred)",
-                "R (Ω)": transformer_z.real,
-                "X (Ω)": transformer_z.imag,
-                "|Z| (Ω)": abs(transformer_z),
+                "Z1 (Ω)": format_complex_ohm(transformer_z1),
+                "Z2 (Ω)": format_complex_ohm(transformer_z2),
+                "Z0 (Ω)": format_complex_ohm(transformer_z0),
+                "|Z1|": abs(transformer_z1),
+                "|Z2|": abs(transformer_z2),
+                "|Z0|": abs(transformer_z0),
             },
             {
                 "Element": "11kV cable from transformer",
-                "R (Ω)": lv_cable_z.real,
-                "X (Ω)": lv_cable_z.imag,
-                "|Z| (Ω)": abs(lv_cable_z),
+                "Z1 (Ω)": format_complex_ohm(lv_cable_z1),
+                "Z2 (Ω)": format_complex_ohm(lv_cable_z2),
+                "Z0 (Ω)": format_complex_ohm(lv_cable_z0),
+                "|Z1|": abs(lv_cable_z1),
+                "|Z2|": abs(lv_cable_z2),
+                "|Z0|": abs(lv_cable_z0),
             },
             {
                 "Element": "11kV feeder",
-                "R (Ω)": feeder_z.real,
-                "X (Ω)": feeder_z.imag,
-                "|Z| (Ω)": abs(feeder_z),
+                "Z1 (Ω)": format_complex_ohm(feeder_z1),
+                "Z2 (Ω)": format_complex_ohm(feeder_z2),
+                "Z0 (Ω)": format_complex_ohm(feeder_z0),
+                "|Z1|": abs(feeder_z1),
+                "|Z2|": abs(feeder_z2),
+                "|Z0|": abs(feeder_z0),
             },
             {
                 "Element": "Total to 11kV transformer busbar",
-                "R (Ω)": z_incomer.real,
-                "X (Ω)": z_incomer.imag,
-                "|Z| (Ω)": abs(z_incomer),
+                "Z1 (Ω)": format_complex_ohm(z1_incomer),
+                "Z2 (Ω)": format_complex_ohm(z2_incomer),
+                "Z0 (Ω)": format_complex_ohm(z0_incomer),
+                "|Z1|": abs(z1_incomer),
+                "|Z2|": abs(z2_incomer),
+                "|Z0|": abs(z0_incomer),
             },
             {
                 "Element": "Total to 11kV remote busbar",
-                "R (Ω)": z_load.real,
-                "X (Ω)": z_load.imag,
-                "|Z| (Ω)": abs(z_load),
+                "Z1 (Ω)": format_complex_ohm(z1_load),
+                "Z2 (Ω)": format_complex_ohm(z2_load),
+                "Z0 (Ω)": format_complex_ohm(z0_load),
+                "|Z1|": abs(z1_load),
+                "|Z2|": abs(z2_load),
+                "|Z0|": abs(z0_load),
             },
         ]
     )
     st.dataframe(
-        impedance_df.style.format({"R (Ω)": "{:.4f}", "X (Ω)": "{:.4f}", "|Z| (Ω)": "{:.4f}"}),
+        impedance_df.style.format({"|Z1|": "{:.4f}", "|Z2|": "{:.4f}", "|Z0|": "{:.4f}"}),
         use_container_width=True,
     )
     st.caption(
         f"Nominal frequency: {frequency_hz} Hz | Source base: {source_v_kv:.1f} kV | Transformer: {transformer_hv_kv:.1f}/{transformer_lv_kv:.1f} kV"
+    )
+    st.caption(
+        f"Assumed source Z0/Z1 = {SOURCE_Z0_FACTOR:.1f} and transformer Z0/Z1 = {TRANSFORMER_Z0_FACTOR:.1f}."
     )
 
 fault_df = pd.DataFrame(
     [
         {
             "Bus": "11kV Transformer Busbar",
-            "Z_total_ohm": incomer_fault["Z_total_ohm"],
+            "Z1_total_ohm": incomer_fault["Z1_total_ohm"],
+            "Z2_total_ohm": incomer_fault["Z2_total_ohm"],
+            "Z0_total_ohm": incomer_fault["Z0_total_ohm"],
             "I_3ph_kA": incomer_fault["I_3ph_kA"],
             "I_LL_kA": incomer_fault["I_LL_kA"],
             "I_LG_kA": incomer_fault["I_LG_kA"],
@@ -841,7 +937,9 @@ fault_df = pd.DataFrame(
         },
         {
             "Bus": "11kV Remote Busbar",
-            "Z_total_ohm": load_fault["Z_total_ohm"],
+            "Z1_total_ohm": load_fault["Z1_total_ohm"],
+            "Z2_total_ohm": load_fault["Z2_total_ohm"],
+            "Z0_total_ohm": load_fault["Z0_total_ohm"],
             "I_3ph_kA": load_fault["I_3ph_kA"],
             "I_LL_kA": load_fault["I_LL_kA"],
             "I_LG_kA": load_fault["I_LG_kA"],
@@ -855,7 +953,9 @@ with fault_tab:
     st.dataframe(
         fault_df.style.format(
             {
-                "Z_total_ohm": "{:.4f}",
+                "Z1_total_ohm": "{:.4f}",
+                "Z2_total_ohm": "{:.4f}",
+                "Z0_total_ohm": "{:.4f}",
                 "I_3ph_kA": "{:.2f}",
                 "I_LL_kA": "{:.2f}",
                 "I_LG_kA": "{:.2f}",

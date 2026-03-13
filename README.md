@@ -7,6 +7,7 @@ An ETAP-style web GUI prototype built with [Streamlit](https://streamlit.io/) an
 ## Features
 
 - Accepts detailed network parameters including 33kV source, reactor, HV cable, 33/11kV transformer, LV cable, and feeder.
+- Uses selectable site cable types with built-in best-available legacy sequence impedance data (Z1, Z2, Z0).
 - Includes a one-click 33/11kV default network template (1850 MVA source, 3.23 Ω reactor, 3 km HV cable, 13.5 MVA transformer).
 - Calculates fault levels at 11kV transformer and remote busbars (3-phase, line-line, line-ground).
 - Allows entry of protection relay settings (pickup, TMS, IEC inverse curves, instantaneous).
