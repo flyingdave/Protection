@@ -74,6 +74,13 @@ LV_CABLE_OPTIONS = [
     "Default Cable",
 ]
 
+ARC_FLASH_SWITCHGEAR_FACTOR_MAP = {
+    ("Horizontal", "Enclosed"): 1.40,
+    ("Vertical", "Enclosed"): 1.25,
+    ("Horizontal", "Unenclosed"): 1.10,
+    ("Vertical", "Unenclosed"): 1.00,
+}
+
 SOURCE_Z0_FACTOR = 3.0
 TRANSFORMER_Z0_FACTOR = 1.0
 
@@ -129,8 +136,9 @@ DEFAULT_NETWORK_PRESET = {
     "bolted_fault_current_ka": 10.0,
     "arc_current_factor": 0.85,
     "clearing_time_s": 0.20,
-    "working_distance_mm": 455,
-    "enclosure_type": "Switchboard",
+    "working_distance_mm": 910,
+    "arc_orientation": "Vertical",
+    "arc_enclosure": "Enclosed",
 }
 
 NETWORK_ARRANGEMENT = [
@@ -157,7 +165,8 @@ STUDY_CASE_OPTION_VALUES = {
     "frequency_hz": {50, 60},
     "study_bus": {"11kV Transformer Busbar", "11kV Remote Busbar"},
     "fault_type": {"3-Phase", "Line-Line", "Line-Ground"},
-    "enclosure_type": {"Open air", "Switchboard", "Metal-clad cubicle"},
+    "arc_orientation": {"Horizontal", "Vertical"},
+    "arc_enclosure": {"Enclosed", "Unenclosed"},
     "hv_cable_type": set(HV_CABLE_OPTIONS),
     "lv_cable_type": set(LV_CABLE_OPTIONS),
     "feeder_cable_type": set(LV_CABLE_OPTIONS),
@@ -323,6 +332,13 @@ def default_relay_settings_df() -> pd.DataFrame:
     return pd.DataFrame(BASELINE_RELAY_SETTINGS)[RELAY_EXPORT_COLUMNS]
 
 
+def legacy_enclosure_type_to_arc_enclosure(enclosure_type: object) -> str:
+    normalized_value = str(enclosure_type).strip().lower()
+    if normalized_value == "open air":
+        return "Unenclosed"
+    return "Enclosed"
+
+
 def coerce_study_case_value(key: str, raw_value: object, default_value: object) -> object:
     if raw_value is None:
         return default_value
@@ -396,6 +412,13 @@ def persist_last_entered_state() -> None:
 def initialize_app_state() -> None:
     persisted_state = load_persisted_state()
     persisted_study_case = persisted_state.get("study_case", {}) if isinstance(persisted_state, dict) else {}
+    if isinstance(persisted_study_case, dict) and "arc_enclosure" not in persisted_study_case:
+        legacy_enclosure_type = persisted_study_case.get("enclosure_type")
+        if legacy_enclosure_type is not None:
+            persisted_study_case = persisted_study_case.copy()
+            persisted_study_case["arc_enclosure"] = legacy_enclosure_type_to_arc_enclosure(
+                legacy_enclosure_type
+            )
 
     for key, default_value in DEFAULT_STUDY_CASE.items():
         if key not in st.session_state:
@@ -473,6 +496,11 @@ def parse_study_case_csv(upload_bytes: bytes) -> tuple[bool, str]:
         parameter_key = str(row[parameter_column]).strip()
         if parameter_key:
             parameter_map[parameter_key] = row[value_column]
+
+    if "arc_enclosure" not in parameter_map and "enclosure_type" in parameter_map:
+        parameter_map["arc_enclosure"] = legacy_enclosure_type_to_arc_enclosure(
+            parameter_map["enclosure_type"]
+        )
 
     updates: dict[str, object] = {}
 
@@ -1300,7 +1328,8 @@ with protection_tab:
 with arc_tab:
     st.subheader("Arc-Flash Screening Estimate")
     st.caption(
-        "This is a simplified screening model for early design checks. "
+        "This is a simplified 11kV switchgear screening model for early design checks. "
+        "Select electrode orientation and whether the switchgear is enclosed or unenclosed. "
         "Use a full IEEE 1584 / NFPA 70E study for engineering sign-off."
     )
 
@@ -1357,21 +1386,32 @@ with arc_tab:
         )
 
     with arc_col3:
-        enclosure_type = st.selectbox(
-            "Enclosure",
-            options=["Open air", "Switchboard", "Metal-clad cubicle"],
-            key="enclosure_type",
+        arc_orientation = st.selectbox(
+            "Electrode orientation",
+            options=["Horizontal", "Vertical"],
+            key="arc_orientation",
         )
-        enclosure_factor_map = {
-            "Open air": 1.0,
-            "Switchboard": 1.3,
-            "Metal-clad cubicle": 1.5,
-        }
-        enclosure_factor = enclosure_factor_map[enclosure_type]
+        arc_enclosure = st.selectbox(
+            "Switchgear construction",
+            options=["Enclosed", "Unenclosed"],
+            key="arc_enclosure",
+        )
+        configuration_factor = ARC_FLASH_SWITCHGEAR_FACTOR_MAP[(arc_orientation, arc_enclosure)]
+
+    st.caption(
+        f"11kV switchgear configuration: {arc_orientation.lower()} electrodes, {arc_enclosure.lower()} switchgear "
+        f"(screening factor {configuration_factor:.2f})."
+    )
 
     arc_current_ka = bolted_fault_current_ka * arc_current_factor
     distance_multiplier = (610 / max(working_distance_mm, 1)) ** 1.5
-    incident_energy_cal_cm2 = 0.2 * arc_current_ka * clearing_time_s * enclosure_factor * distance_multiplier
+    incident_energy_cal_cm2 = (
+        0.2
+        * arc_current_ka
+        * clearing_time_s
+        * configuration_factor
+        * distance_multiplier
+    )
     arc_flash_boundary_mm = 610 * ((max(incident_energy_cal_cm2, 0.001) / 1.2) ** (1 / 1.5))
 
     result_col1, result_col2, result_col3 = st.columns(3)
