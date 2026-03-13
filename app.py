@@ -16,22 +16,32 @@ CURVE_CONSTANTS = {
 
 RELAY_EXPORT_COLUMNS = ["Order", "Device", "Curve", "Pickup_A", "TMS", "Inst_A"]
 
-DEFAULT_STUDY_CASE = {
-    "project_name": "Protection",
+DEFAULT_NETWORK_PRESET = {
+    "project_name": "Protection - 33/11kV Network",
     "grading_margin_s": 0.30,
     "v_ll_kv": 11.0,
     "frequency_hz": 50,
-    "source_sc_mva": 500.0,
+    "source_v_kv": 33.0,
+    "source_sc_mva": 1850.0,
     "source_xr": 10.0,
-    "transformer_mva": 10.0,
-    "transformer_z_pct": 8.0,
+    "reactor_ohm": 3.23,
+    "hv_cable_length_km": 3.0,
+    "hv_cable_r_ohm_per_km": 0.09,
+    "hv_cable_x_ohm_per_km": 0.10,
+    "transformer_hv_kv": 33.0,
+    "transformer_lv_kv": 11.0,
+    "transformer_mva": 13.5,
+    "transformer_z_pct": 7.2,
     "transformer_xr": 8.0,
+    "lv_cable_length_km": 0.01,
+    "lv_cable_r_ohm_per_km": 0.08,
+    "lv_cable_x_ohm_per_km": 0.10,
     "feeder_length_km": 0.5,
     "feeder_r_ohm_per_km": 0.08,
     "feeder_x_ohm_per_km": 0.10,
     "ll_factor": 0.87,
     "lg_factor": 0.95,
-    "study_bus": "Incomer Bus",
+    "study_bus": "11kV Transformer Busbar",
     "fault_type": "3-Phase",
     "bolted_fault_current_ka": 10.0,
     "arc_current_factor": 0.85,
@@ -40,9 +50,29 @@ DEFAULT_STUDY_CASE = {
     "enclosure_type": "Switchboard",
 }
 
+NETWORK_ARRANGEMENT = [
+    "33kV source (fault level 1850 MVA)",
+    "33kV CB",
+    "33kV reactor (3.23 Ω)",
+    "3 km underground cable",
+    "33/11kV transformer (13.5 MVA, 7.2%)",
+    "11kV single-core cable (10 m)",
+    "Transformer CB",
+    "11kV busbar",
+    "11kV feeder CB",
+    "11kV feeder",
+    "11kV CB",
+    "11kV busbar",
+    "11kV CB",
+    "11kV feeder",
+    "11kV CB",
+]
+
+DEFAULT_STUDY_CASE = DEFAULT_NETWORK_PRESET.copy()
+
 STUDY_CASE_OPTION_VALUES = {
     "frequency_hz": {50, 60},
-    "study_bus": {"Incomer Bus", "Load Bus"},
+    "study_bus": {"11kV Transformer Busbar", "11kV Remote Busbar"},
     "fault_type": {"3-Phase", "Line-Line", "Line-Ground"},
     "enclosure_type": {"Open air", "Switchboard", "Metal-clad cubicle"},
 }
@@ -50,11 +80,21 @@ STUDY_CASE_OPTION_VALUES = {
 STUDY_CASE_BOUNDS = {
     "grading_margin_s": (0.10, 1.00),
     "v_ll_kv": (0.4, 66.0),
+    "source_v_kv": (1.0, 400.0),
     "source_sc_mva": (10.0, 50000.0),
     "source_xr": (0.0, 50.0),
+    "reactor_ohm": (0.0, 50.0),
+    "hv_cable_length_km": (0.0, 100.0),
+    "hv_cable_r_ohm_per_km": (0.0, 5.0),
+    "hv_cable_x_ohm_per_km": (0.0, 5.0),
+    "transformer_hv_kv": (1.0, 400.0),
+    "transformer_lv_kv": (0.4, 66.0),
     "transformer_mva": (0.1, 1000.0),
     "transformer_z_pct": (1.0, 25.0),
     "transformer_xr": (0.0, 50.0),
+    "lv_cable_length_km": (0.0, 20.0),
+    "lv_cable_r_ohm_per_km": (0.0, 5.0),
+    "lv_cable_x_ohm_per_km": (0.0, 5.0),
     "feeder_length_km": (0.0, 100.0),
     "feeder_r_ohm_per_km": (0.0, 5.0),
     "feeder_x_ohm_per_km": (0.0, 5.0),
@@ -186,6 +226,11 @@ def initialize_study_case_state() -> None:
     for key, default_value in DEFAULT_STUDY_CASE.items():
         if key not in st.session_state:
             st.session_state[key] = default_value
+
+
+def load_network_preset() -> None:
+    for key, value in DEFAULT_NETWORK_PRESET.items():
+        st.session_state[key] = value
 
 
 def serialize_study_case_csv() -> bytes:
@@ -361,6 +406,13 @@ with st.sidebar:
         step=0.05,
         key="grading_margin_s",
     )
+
+    if st.button("Load 33/11kV default network", use_container_width=True):
+        load_network_preset()
+        st.session_state["study_case_upload_status"] = "success"
+        st.session_state["study_case_upload_message"] = "Loaded 33/11kV default network parameters."
+        st.rerun()
+
     st.caption(f"Active study: {project_name}")
 
 if "relay_settings" not in st.session_state:
@@ -404,17 +456,25 @@ network_tab, fault_tab, protection_tab, arc_tab = st.tabs(
 
 with network_tab:
     st.subheader("Power Network Parameters")
+    st.caption("All impedances are converted to the selected study voltage base before fault calculations.")
+    st.markdown("#### One-line arrangement (default template)")
+    st.caption(" → ".join(NETWORK_ARRANGEMENT))
+    st.info(
+        "Cable conductor type is represented through entered R/X values. "
+        "Update cable Ω/km values from your manufacturer data for final studies."
+    )
+
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        v_ll_kv = st.number_input(
-            "System voltage at study bus (kV)",
-            min_value=0.4,
-            max_value=66.0,
+        st.markdown("**33kV Source Side**")
+        source_v_kv = st.number_input(
+            "Source nominal voltage (kV)",
+            min_value=1.0,
+            max_value=400.0,
             step=0.1,
-            key="v_ll_kv",
+            key="source_v_kv",
         )
-        frequency_hz = st.selectbox("Frequency (Hz)", options=[50, 60], key="frequency_hz")
         source_sc_mva = st.number_input(
             "Upstream source short-circuit level (MVA)",
             min_value=10.0,
@@ -429,8 +489,51 @@ with network_tab:
             step=0.5,
             key="source_xr",
         )
+        reactor_ohm = st.number_input(
+            "33kV reactor reactance (Ω)",
+            min_value=0.0,
+            max_value=50.0,
+            step=0.01,
+            key="reactor_ohm",
+        )
+        hv_cable_length_km = st.number_input(
+            "33kV cable length (km)",
+            min_value=0.0,
+            max_value=100.0,
+            step=0.1,
+            key="hv_cable_length_km",
+        )
+        hv_cable_r_ohm_per_km = st.number_input(
+            "33kV cable R (Ω/km)",
+            min_value=0.0,
+            max_value=5.0,
+            step=0.01,
+            key="hv_cable_r_ohm_per_km",
+        )
+        hv_cable_x_ohm_per_km = st.number_input(
+            "33kV cable X (Ω/km)",
+            min_value=0.0,
+            max_value=5.0,
+            step=0.01,
+            key="hv_cable_x_ohm_per_km",
+        )
 
     with col2:
+        st.markdown("**Transformer & 11kV Link**")
+        transformer_hv_kv = st.number_input(
+            "Transformer HV voltage (kV)",
+            min_value=1.0,
+            max_value=400.0,
+            step=0.1,
+            key="transformer_hv_kv",
+        )
+        transformer_lv_kv = st.number_input(
+            "Transformer LV voltage (kV)",
+            min_value=0.4,
+            max_value=66.0,
+            step=0.1,
+            key="transformer_lv_kv",
+        )
         transformer_mva = st.number_input(
             "Transformer rating (MVA)",
             min_value=0.1,
@@ -452,8 +555,38 @@ with network_tab:
             step=0.5,
             key="transformer_xr",
         )
+        lv_cable_length_km = st.number_input(
+            "11kV cable length from transformer (km)",
+            min_value=0.0,
+            max_value=20.0,
+            step=0.01,
+            key="lv_cable_length_km",
+        )
+        lv_cable_r_ohm_per_km = st.number_input(
+            "11kV cable R (Ω/km)",
+            min_value=0.0,
+            max_value=5.0,
+            step=0.01,
+            key="lv_cable_r_ohm_per_km",
+        )
+        lv_cable_x_ohm_per_km = st.number_input(
+            "11kV cable X (Ω/km)",
+            min_value=0.0,
+            max_value=5.0,
+            step=0.01,
+            key="lv_cable_x_ohm_per_km",
+        )
 
     with col3:
+        st.markdown("**11kV Study Side**")
+        v_ll_kv = st.number_input(
+            "Study bus nominal voltage (kV)",
+            min_value=0.4,
+            max_value=66.0,
+            step=0.1,
+            key="v_ll_kv",
+        )
+        frequency_hz = st.selectbox("Frequency (Hz)", options=[50, 60], key="frequency_hz")
         feeder_length_km = st.number_input(
             "Feeder length (km)",
             min_value=0.0,
@@ -495,18 +628,41 @@ with network_tab:
             key="lg_factor",
         )
 
-source_z_mag = (v_ll_kv**2) / source_sc_mva
-source_z = split_rx_from_z_magnitude(source_z_mag, source_xr)
+if st.session_state.get("study_bus") not in STUDY_CASE_OPTION_VALUES["study_bus"]:
+    st.session_state["study_bus"] = "11kV Transformer Busbar"
 
-transformer_z_mag = (transformer_z_pct / 100) * ((v_ll_kv**2) / transformer_mva)
-transformer_z = split_rx_from_z_magnitude(transformer_z_mag, transformer_xr)
+source_z_hv = split_rx_from_z_magnitude((source_v_kv**2) / source_sc_mva, source_xr)
+source_to_study_factor = (v_ll_kv / source_v_kv) ** 2 if source_v_kv > 0 else 0.0
+source_z = source_z_hv * source_to_study_factor
+
+reactor_z_hv = complex(0.0, reactor_ohm)
+reactor_z = reactor_z_hv * source_to_study_factor
+
+hv_cable_z_hv = complex(
+    hv_cable_length_km * hv_cable_r_ohm_per_km,
+    hv_cable_length_km * hv_cable_x_ohm_per_km,
+)
+hv_cable_z = hv_cable_z_hv * source_to_study_factor
+
+transformer_z_lv = split_rx_from_z_magnitude(
+    (transformer_z_pct / 100) * ((transformer_lv_kv**2) / transformer_mva),
+    transformer_xr,
+)
+lv_to_study_factor = (v_ll_kv / transformer_lv_kv) ** 2 if transformer_lv_kv > 0 else 0.0
+transformer_z = transformer_z_lv * lv_to_study_factor
+
+lv_cable_z_lv = complex(
+    lv_cable_length_km * lv_cable_r_ohm_per_km,
+    lv_cable_length_km * lv_cable_x_ohm_per_km,
+)
+lv_cable_z = lv_cable_z_lv * lv_to_study_factor
 
 feeder_z = complex(
     feeder_length_km * feeder_r_ohm_per_km,
     feeder_length_km * feeder_x_ohm_per_km,
 )
 
-z_incomer = source_z + transformer_z
+z_incomer = source_z + reactor_z + hv_cable_z + transformer_z + lv_cable_z
 z_load = z_incomer + feeder_z
 
 incomer_fault = calc_fault_values(v_ll_kv, z_incomer, ll_factor, lg_factor)
@@ -517,31 +673,49 @@ with network_tab:
     impedance_df = pd.DataFrame(
         [
             {
-                "Element": "Source equivalent",
+                "Element": "Source equivalent (referred)",
                 "R (Ω)": source_z.real,
                 "X (Ω)": source_z.imag,
                 "|Z| (Ω)": abs(source_z),
             },
             {
-                "Element": "Transformer equivalent",
+                "Element": "33kV reactor (referred)",
+                "R (Ω)": reactor_z.real,
+                "X (Ω)": reactor_z.imag,
+                "|Z| (Ω)": abs(reactor_z),
+            },
+            {
+                "Element": "33kV cable (referred)",
+                "R (Ω)": hv_cable_z.real,
+                "X (Ω)": hv_cable_z.imag,
+                "|Z| (Ω)": abs(hv_cable_z),
+            },
+            {
+                "Element": "Transformer equivalent (referred)",
                 "R (Ω)": transformer_z.real,
                 "X (Ω)": transformer_z.imag,
                 "|Z| (Ω)": abs(transformer_z),
             },
             {
-                "Element": "Feeder",
+                "Element": "11kV cable from transformer",
+                "R (Ω)": lv_cable_z.real,
+                "X (Ω)": lv_cable_z.imag,
+                "|Z| (Ω)": abs(lv_cable_z),
+            },
+            {
+                "Element": "11kV feeder",
                 "R (Ω)": feeder_z.real,
                 "X (Ω)": feeder_z.imag,
                 "|Z| (Ω)": abs(feeder_z),
             },
             {
-                "Element": "Total to incomer bus",
+                "Element": "Total to 11kV transformer busbar",
                 "R (Ω)": z_incomer.real,
                 "X (Ω)": z_incomer.imag,
                 "|Z| (Ω)": abs(z_incomer),
             },
             {
-                "Element": "Total to load bus",
+                "Element": "Total to 11kV remote busbar",
                 "R (Ω)": z_load.real,
                 "X (Ω)": z_load.imag,
                 "|Z| (Ω)": abs(z_load),
@@ -552,12 +726,14 @@ with network_tab:
         impedance_df.style.format({"R (Ω)": "{:.4f}", "X (Ω)": "{:.4f}", "|Z| (Ω)": "{:.4f}"}),
         use_container_width=True,
     )
-    st.caption(f"Nominal frequency selected: {frequency_hz} Hz")
+    st.caption(
+        f"Nominal frequency: {frequency_hz} Hz | Source base: {source_v_kv:.1f} kV | Transformer: {transformer_hv_kv:.1f}/{transformer_lv_kv:.1f} kV"
+    )
 
 fault_df = pd.DataFrame(
     [
         {
-            "Bus": "Incomer Bus",
+            "Bus": "11kV Transformer Busbar",
             "Z_total_ohm": incomer_fault["Z_total_ohm"],
             "I_3ph_kA": incomer_fault["I_3ph_kA"],
             "I_LL_kA": incomer_fault["I_LL_kA"],
@@ -565,7 +741,7 @@ fault_df = pd.DataFrame(
             "Fault_MVA": incomer_fault["Fault_MVA"],
         },
         {
-            "Bus": "Load Bus",
+            "Bus": "11kV Remote Busbar",
             "Z_total_ohm": load_fault["Z_total_ohm"],
             "I_3ph_kA": load_fault["I_3ph_kA"],
             "I_LL_kA": load_fault["I_LL_kA"],
