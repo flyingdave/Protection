@@ -662,12 +662,13 @@ with st.sidebar:
 
     st.caption(f"Active study: {project_name}")
 
-network_tab, fault_tab, protection_tab, arc_tab = st.tabs(
+network_tab, fault_tab, protection_tab, arc_tab, formula_tab = st.tabs(
     [
         "1) Network Inputs",
         "2) Fault Levels",
         "3) Protection & Grading",
         "4) Arc-Flash Estimate",
+        "5) Formula Reference",
     ]
 )
 
@@ -1544,5 +1545,56 @@ with arc_tab:
         st.metric("Arc flash boundary", f"{arc_flash_boundary_mm:.0f} mm")
 
     st.info(arc_flash_category(incident_energy_cal_cm2))
+
+with formula_tab:
+    st.subheader("Formula Reference")
+    st.caption(
+        "Equations used in the app model, including per-unit/base conversion, sequence fault calculations, "
+        "relay timing, grading, and simplified arc-flash screening."
+    )
+
+    st.markdown("#### Per-Unit / Base Conversion")
+    st.latex(r"Z_{\mathrm{base}} = \frac{V_{LL}^2}{S_{3\phi}}")
+    st.latex(r"\lvert Z_{\mathrm{source,HV}}\rvert = \frac{V_{\mathrm{source}}^2}{S_{\mathrm{SC}}}")
+    st.latex(r"Z_{\mathrm{referred}} = Z_{\mathrm{original}} \left(\frac{V_{\mathrm{study}}}{V_{\mathrm{original}}}\right)^2")
+    st.caption("Use kV and MVA consistently; resulting impedance is in ohms.")
+
+    st.markdown("#### R/X Split From Magnitude and X/R")
+    st.latex(r"R = \frac{\lvert Z \rvert}{\sqrt{1 + (X/R)^2}}")
+    st.latex(r"X = R\,(X/R)")
+    st.latex(r"Z = R + jX")
+
+    st.markdown("#### Sequence and Network Build-Up")
+    st.latex(r"Z_{2} = Z_{1}")
+    st.latex(r"Z_{0,\mathrm{source}} = k_{\mathrm{source}} Z_{1} \quad (k_{\mathrm{source}} = %.1f)" % SOURCE_Z0_FACTOR)
+    st.latex(r"Z_{0,\mathrm{tr}} = k_{\mathrm{tr}} Z_{1} \quad (k_{\mathrm{tr}} = %.1f)" % TRANSFORMER_Z0_FACTOR)
+    st.latex(r"Z_{1,\mathrm{cable}} = L\,z_1,\; Z_{2,\mathrm{cable}} = L\,z_2,\; Z_{0,\mathrm{cable}} = L\,z_0")
+    st.latex(r"Z_{\mathrm{parallel,eq}} = \frac{Z}{n}")
+    st.latex(
+        r"Z_{\mathrm{source\to 1st\,11kV\,bus,single}} = Z_{\mathrm{reactor}} + Z_{33\mathrm{kV\,cable}} + Z_{\mathrm{tr}} + Z_{11\mathrm{kV\,tr\,cable(eq)}}"
+    )
+    st.latex(r"Z_{\mathrm{source\to 1st\,11kV\,bus,eq}} = \frac{Z_{\mathrm{source\to 1st\,11kV\,bus,single}}}{n_{\mathrm{source\,paths}}}")
+    st.latex(r"Z_{\mathrm{incomer}} = Z_{\mathrm{source}} + Z_{\mathrm{source\to 1st\,11kV\,bus,eq}}")
+    st.latex(r"Z_{\mathrm{remote}} = Z_{\mathrm{incomer}} + Z_{\mathrm{feeder(eq)}}")
+
+    st.markdown("#### Fault Current Equations")
+    st.latex(r"I_{3\phi} = \frac{V_{LL}}{\sqrt{3}\,\lvert Z_1 \rvert}")
+    st.latex(r"I_{LL} = \frac{V_{LL}}{\lvert Z_1 + Z_2 \rvert}")
+    st.latex(r"I_{LG} = \frac{\sqrt{3}\,V_{LL}}{\lvert Z_1 + Z_2 + Z_0 \rvert}")
+    st.latex(r"\mathrm{Fault\,MVA} = \sqrt{3}\,V_{LL}\,I_{3\phi}")
+
+    st.markdown("#### Relay Timing and Grading")
+    st.latex(r"t_{\mathrm{IDMT}} = \frac{\mathrm{TMS}\,k}{\left(\frac{I}{I_p}\right)^{\alpha} - 1}")
+    st.caption(
+        "Relay logic used: no trip if I <= pickup or invalid settings; instantaneous element trips at 0.05 s when enabled and I >= Inst_A."
+    )
+    st.latex(r"\Delta t = t_{\mathrm{upstream}} - t_{\mathrm{downstream}}")
+    st.latex(r"\mathrm{PASS\ if\ } \Delta t \ge t_{\mathrm{grading\,target}}")
+
+    st.markdown("#### Simplified 11kV Arc-Flash Screening")
+    st.latex(r"I_{\mathrm{arc}} = I_{\mathrm{bolted}}\,f_{\mathrm{arc}}")
+    st.latex(r"E_{\mathrm{cal/cm^2}} = 0.2\,I_{\mathrm{arc}}\,t_{\mathrm{clear}}\,C_{\mathrm{config}}\left(\frac{610}{D_{\mathrm{mm}}}\right)^{1.5}")
+    st.latex(r"\mathrm{AFB}_{\mathrm{mm}} = 610\left(\frac{E_{\mathrm{cal/cm^2}}}{1.2}\right)^{\frac{1}{1.5}}")
+    st.caption("This arc-flash section is an early-stage screening approximation, not a full IEEE 1584 study.")
 
 persist_last_entered_state()
