@@ -130,8 +130,10 @@ DEFAULT_NETWORK_PRESET = {
     "lv_cable_length_km": 0.01,
     "lv_cable_type": "11kV XLPE 3c 300mm2 Cu",
     "duplicate_source_to_first_busbar_circuit": False,
+    "parallel_lv_transformer_cable": False,
     "feeder_length_km": 0.5,
     "feeder_cable_type": "Default Cable",
+    "parallel_feeder_cable": False,
     "study_bus": "11kV Transformer Busbar",
     "fault_type": "3-Phase",
     "bolted_fault_current_ka": 10.0,
@@ -194,7 +196,11 @@ STUDY_CASE_BOUNDS = {
     "working_distance_mm": (200, 2000),
 }
 
-STUDY_CASE_BOOL_FIELDS = {"duplicate_source_to_first_busbar_circuit"}
+STUDY_CASE_BOOL_FIELDS = {
+    "duplicate_source_to_first_busbar_circuit",
+    "parallel_lv_transformer_cable",
+    "parallel_feeder_cable",
+}
 
 STUDY_CASE_INT_FIELDS = {"frequency_hz", "working_distance_mm"}
 
@@ -680,6 +686,14 @@ with network_tab:
             "are modeled as two identical circuits in parallel from the 33kV source bus to the first 11kV busbar. "
             "The upstream source equivalent remains common."
         )
+    if st.session_state.get("parallel_lv_transformer_cable", False):
+        st.caption(
+            "11kV transformer cable is modeled as two cables in parallel (impedance halved for this segment)."
+        )
+    if st.session_state.get("parallel_feeder_cable", False):
+        st.caption(
+            "11kV feeder cable is modeled as two cables in parallel (impedance halved for this segment)."
+        )
 
     col1, col2, col3 = st.columns(3)
 
@@ -775,6 +789,10 @@ with network_tab:
             options=LV_CABLE_OPTIONS,
             key="lv_cable_type",
         )
+        parallel_lv_transformer_cable = st.checkbox(
+            "Parallel 11kV transformer cable (2 in parallel)",
+            key="parallel_lv_transformer_cable",
+        )
         duplicate_source_to_first_busbar_circuit = st.checkbox(
             "Duplicate source-to-1st-11kV-busbar circuit in parallel",
             key="duplicate_source_to_first_busbar_circuit",
@@ -801,6 +819,10 @@ with network_tab:
             "11kV feeder cable type",
             options=LV_CABLE_OPTIONS,
             key="feeder_cable_type",
+        )
+        parallel_feeder_cable = st.checkbox(
+            "Parallel 11kV feeder cable (2 in parallel)",
+            key="parallel_feeder_cable",
         )
 
 if st.session_state.get("study_bus") not in STUDY_CASE_OPTION_VALUES["study_bus"]:
@@ -835,9 +857,14 @@ lv_cable_z1 = lv_cable_length_km * lv_cable_data["z1"] * lv_to_study_factor
 lv_cable_z2 = lv_cable_length_km * lv_cable_data["z2"] * lv_to_study_factor
 lv_cable_z0 = lv_cable_length_km * lv_cable_data["z0"] * lv_to_study_factor
 
-single_source_to_first_busbar_circuit_z1 = reactor_z1 + hv_cable_z1 + transformer_z1 + lv_cable_z1
-single_source_to_first_busbar_circuit_z2 = reactor_z2 + hv_cable_z2 + transformer_z2 + lv_cable_z2
-single_source_to_first_busbar_circuit_z0 = reactor_z0 + hv_cable_z0 + transformer_z0 + lv_cable_z0
+lv_transformer_cable_count = 2 if parallel_lv_transformer_cable else 1
+lv_cable_equiv_z1 = lv_cable_z1 / lv_transformer_cable_count
+lv_cable_equiv_z2 = lv_cable_z2 / lv_transformer_cable_count
+lv_cable_equiv_z0 = lv_cable_z0 / lv_transformer_cable_count
+
+single_source_to_first_busbar_circuit_z1 = reactor_z1 + hv_cable_z1 + transformer_z1 + lv_cable_equiv_z1
+single_source_to_first_busbar_circuit_z2 = reactor_z2 + hv_cable_z2 + transformer_z2 + lv_cable_equiv_z2
+single_source_to_first_busbar_circuit_z0 = reactor_z0 + hv_cable_z0 + transformer_z0 + lv_cable_equiv_z0
 
 parallel_circuit_count = 2 if duplicate_source_to_first_busbar_circuit else 1
 source_to_first_busbar_equiv_z1 = single_source_to_first_busbar_circuit_z1 / parallel_circuit_count
@@ -849,13 +876,18 @@ feeder_z1 = feeder_length_km * feeder_cable_data["z1"]
 feeder_z2 = feeder_length_km * feeder_cable_data["z2"]
 feeder_z0 = feeder_length_km * feeder_cable_data["z0"]
 
+feeder_cable_count = 2 if parallel_feeder_cable else 1
+feeder_equiv_z1 = feeder_z1 / feeder_cable_count
+feeder_equiv_z2 = feeder_z2 / feeder_cable_count
+feeder_equiv_z0 = feeder_z0 / feeder_cable_count
+
 z1_incomer = source_z1 + source_to_first_busbar_equiv_z1
 z2_incomer = source_z2 + source_to_first_busbar_equiv_z2
 z0_incomer = source_z0 + source_to_first_busbar_equiv_z0
 
-z1_load = z1_incomer + feeder_z1
-z2_load = z2_incomer + feeder_z2
-z0_load = z0_incomer + feeder_z0
+z1_load = z1_incomer + feeder_equiv_z1
+z2_load = z2_incomer + feeder_equiv_z2
+z0_load = z0_incomer + feeder_equiv_z0
 
 incomer_fault = calc_fault_values(v_ll_kv, z1_incomer, z2_incomer, z0_incomer)
 load_fault = calc_fault_values(v_ll_kv, z1_load, z2_load, z0_load)
@@ -943,7 +975,7 @@ with network_tab:
             "|Z0|": abs(transformer_z0),
         },
         {
-            "Element": "11kV cable from transformer (per circuit)",
+            "Element": "11kV cable from transformer (per cable)",
             "Z1 (Ω)": format_complex_ohm(lv_cable_z1),
             "Z2 (Ω)": format_complex_ohm(lv_cable_z2),
             "Z0 (Ω)": format_complex_ohm(lv_cable_z0),
@@ -961,6 +993,18 @@ with network_tab:
             "|Z0|": abs(single_source_to_first_busbar_circuit_z0),
         },
     ]
+    if parallel_lv_transformer_cable:
+        impedance_rows.append(
+            {
+                "Element": "Equivalent of 2 parallel 11kV transformer cables (per source circuit)",
+                "Z1 (Ω)": format_complex_ohm(lv_cable_equiv_z1),
+                "Z2 (Ω)": format_complex_ohm(lv_cable_equiv_z2),
+                "Z0 (Ω)": format_complex_ohm(lv_cable_equiv_z0),
+                "|Z1|": abs(lv_cable_equiv_z1),
+                "|Z2|": abs(lv_cable_equiv_z2),
+                "|Z0|": abs(lv_cable_equiv_z0),
+            }
+        )
     if duplicate_source_to_first_busbar_circuit:
         impedance_rows.append(
             {
@@ -973,17 +1017,31 @@ with network_tab:
                 "|Z0|": abs(source_to_first_busbar_equiv_z0),
             }
         )
+    impedance_rows.append(
+        {
+            "Element": "11kV feeder (per cable)",
+            "Z1 (Ω)": format_complex_ohm(feeder_z1),
+            "Z2 (Ω)": format_complex_ohm(feeder_z2),
+            "Z0 (Ω)": format_complex_ohm(feeder_z0),
+            "|Z1|": abs(feeder_z1),
+            "|Z2|": abs(feeder_z2),
+            "|Z0|": abs(feeder_z0),
+        }
+    )
+    if parallel_feeder_cable:
+        impedance_rows.append(
+            {
+                "Element": "Equivalent of 2 parallel 11kV feeder cables",
+                "Z1 (Ω)": format_complex_ohm(feeder_equiv_z1),
+                "Z2 (Ω)": format_complex_ohm(feeder_equiv_z2),
+                "Z0 (Ω)": format_complex_ohm(feeder_equiv_z0),
+                "|Z1|": abs(feeder_equiv_z1),
+                "|Z2|": abs(feeder_equiv_z2),
+                "|Z0|": abs(feeder_equiv_z0),
+            }
+        )
     impedance_rows.extend(
         [
-            {
-                "Element": "11kV feeder",
-                "Z1 (Ω)": format_complex_ohm(feeder_z1),
-                "Z2 (Ω)": format_complex_ohm(feeder_z2),
-                "Z0 (Ω)": format_complex_ohm(feeder_z0),
-                "|Z1|": abs(feeder_z1),
-                "|Z2|": abs(feeder_z2),
-                "|Z0|": abs(feeder_z0),
-            },
             {
                 "Element": "Total to 11kV transformer busbar",
                 "Z1 (Ω)": format_complex_ohm(z1_incomer),
