@@ -76,6 +76,7 @@ LV_CABLE_OPTIONS = [
 
 SOURCE_Z0_FACTOR = 3.0
 TRANSFORMER_Z0_FACTOR = 1.0
+MIN_GRADING_CHECK_TIME_S = 0.051
 
 BASELINE_RELAY_SETTINGS = [
     {
@@ -1105,13 +1106,18 @@ with protection_tab:
         for index in range(len(relay_results_df) - 1):
             downstream = relay_results_df.iloc[index]
             upstream = relay_results_df.iloc[index + 1]
+            downstream_time_s = float(downstream["Operate_s"])
+            upstream_time_s = float(upstream["Operate_s"])
 
-            if math.isfinite(float(downstream["Operate_s"])) and math.isfinite(float(upstream["Operate_s"])):
-                margin_s = float(upstream["Operate_s"]) - float(downstream["Operate_s"])
-                status = "PASS" if margin_s >= grading_margin_s else "FAIL"
-            else:
+            if not (math.isfinite(downstream_time_s) and math.isfinite(upstream_time_s)):
                 margin_s = math.nan
                 status = "CHECK"
+            elif downstream_time_s < MIN_GRADING_CHECK_TIME_S or upstream_time_s < MIN_GRADING_CHECK_TIME_S:
+                margin_s = math.nan
+                status = "IGNORED (<0.051s)"
+            else:
+                margin_s = upstream_time_s - downstream_time_s
+                status = "PASS" if margin_s >= grading_margin_s else "FAIL"
 
             grading_rows.append(
                 {
@@ -1125,15 +1131,21 @@ with protection_tab:
 
         grading_df = pd.DataFrame(grading_rows)
         st.markdown("#### Grading Margins")
+        st.caption(
+            f"Pairs with relay operating time faster than {MIN_GRADING_CHECK_TIME_S:.3f} s are ignored in grading checks."
+        )
         st.dataframe(
             grading_df.style.format({"Margin_s": "{:.3f}", "Target_s": "{:.3f}"}),
             use_container_width=True,
         )
 
-        if not grading_df.empty and (grading_df["Status"] == "FAIL").any():
+        graded_df = grading_df[grading_df["Status"].isin(["PASS", "FAIL"])]
+        if not graded_df.empty and (graded_df["Status"] == "FAIL").any():
             st.error("One or more relay pairs do not meet the grading margin target.")
-        elif not grading_df.empty:
+        elif not graded_df.empty:
             st.success("All checked relay pairs meet the grading margin target.")
+        else:
+            st.info("No relay pairs qualified for grading checks at this fault level.")
 
         min_pickup = max(float(relay_df["Pickup_A"].min()) * 1.05, 1.0)
         max_current = max(
