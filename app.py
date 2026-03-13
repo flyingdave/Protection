@@ -189,7 +189,7 @@ STUDY_CASE_BOUNDS = {
     "feeder_length_km": (0.0, 100.0),
     "bolted_fault_current_ka": (0.1, 200.0),
     "arc_current_factor": (0.50, 1.00),
-    "clearing_time_s": (0.01, 2.00),
+    "clearing_time_s": (0.01, 5.00),
     "working_distance_mm": (200, 2000),
 }
 
@@ -1373,7 +1373,7 @@ with arc_tab:
         clearing_time_s = st.number_input(
             "Clearing time (s)",
             min_value=0.01,
-            max_value=2.00,
+            max_value=5.00,
             step=0.01,
             key="clearing_time_s",
         )
