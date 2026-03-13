@@ -138,6 +138,36 @@ class NetworkFaultCalculationTests(unittest.TestCase):
         self.assertGreater(incomer_fault["I_LL_kA"], load_fault["I_LL_kA"])
         self.assertGreater(incomer_fault["I_LG_kA"], load_fault["I_LG_kA"])
 
+    def test_default_network_golden_baseline_fault_levels(self) -> None:
+        computed = self._compute_network_faults()
+        incomer_fault = computed["incomer_fault"]
+        load_fault = computed["load_fault"]
+
+        expected_incomer = {
+            "Z1_total_ohm": 1.1075599852793814,
+            "Z2_total_ohm": 1.1075599852793814,
+            "Z0_total_ohm": 1.3229924325235352,
+            "I_3ph_kA": 5.734093905066356,
+            "I_LL_kA": 4.965870989472979,
+            "I_LG_kA": 5.38816982725064,
+            "Fault_MVA": 109.24916176840554,
+        }
+        expected_load = {
+            "Z1_total_ohm": 1.1638046541067235,
+            "Z2_total_ohm": 1.1638046541067235,
+            "Z0_total_ohm": 1.5097562166473846,
+            "I_3ph_kA": 5.456975050473973,
+            "I_LL_kA": 4.725879021528331,
+            "I_LG_kA": 4.974932699157874,
+            "Fault_MVA": 103.96933847362327,
+        }
+
+        for key, expected_value in expected_incomer.items():
+            self.assertAlmostEqual(incomer_fault[key], expected_value, places=6)
+
+        for key, expected_value in expected_load.items():
+            self.assertAlmostEqual(load_fault[key], expected_value, places=6)
+
     def test_higher_source_sc_mva_increases_fault_current(self) -> None:
         low_source = self._compute_network_faults({"source_sc_mva": 1200.0})
         high_source = self._compute_network_faults({"source_sc_mva": 3000.0})
