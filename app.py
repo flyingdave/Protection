@@ -1582,14 +1582,31 @@ with full_arc_tab:
         )
 
     with full_col2:
-        clearing_time_cap_s = st.number_input(
-            "Clearing time cap (s)",
-            min_value=0.01,
-            max_value=5.00,
-            value=float(st.session_state.get("clearing_time_s", 0.20)),
-            step=0.01,
-            key="full_arc_clearing_time_cap_s",
+        clearing_time_method = st.selectbox(
+            "Clearing time method",
+            options=["Manual fixed", "Relay-derived (capped)"],
+            key="full_arc_clearing_time_method",
         )
+        if clearing_time_method == "Manual fixed":
+            manual_clearing_time_s = st.number_input(
+                "Applied clearing time (s)",
+                min_value=0.01,
+                max_value=5.00,
+                value=float(st.session_state.get("clearing_time_s", 0.20)),
+                step=0.01,
+                key="full_arc_manual_clearing_time_s",
+            )
+            clearing_time_cap_s = float(manual_clearing_time_s)
+        else:
+            manual_clearing_time_s = math.nan
+            clearing_time_cap_s = st.number_input(
+                "Clearing time cap (s)",
+                min_value=0.01,
+                max_value=5.00,
+                value=float(st.session_state.get("clearing_time_s", 0.20)),
+                step=0.01,
+                key="full_arc_clearing_time_cap_s",
+            )
         working_distance_mm_full = st.number_input(
             "Working distance (mm) - full calc",
             min_value=200,
@@ -1632,28 +1649,32 @@ with full_arc_tab:
         ("Nominal arcing current", arc_current_nominal_ka),
         ("Max arcing current", arc_current_max_ka),
     ]:
-        relay_clearing_time_s = math.inf
-        if not relay_df_for_full_arc.empty:
-            scenario_trip_times = [
-                calc_relay_time_s(
-                    current_a=arc_current_ka_scenario * 1000,
-                    pickup_a=float(row["Pickup_A"]),
-                    tms=float(row["TMS"]),
-                    curve_name=str(row["Curve"]),
-                    inst_pickup_a=float(row["Inst_A"]),
-                )
-                for _, row in relay_df_for_full_arc.iterrows()
-            ]
-            finite_trip_times = [time for time in scenario_trip_times if math.isfinite(time)]
-            if finite_trip_times:
-                relay_clearing_time_s = max(0.05, min(finite_trip_times))
-
-        if math.isfinite(relay_clearing_time_s):
-            applied_clearing_time_s = min(relay_clearing_time_s, clearing_time_cap_s)
-            clearing_source = "Relay (capped)" if relay_clearing_time_s > clearing_time_cap_s else "Relay"
+        if clearing_time_method == "Manual fixed":
+            applied_clearing_time_s = float(manual_clearing_time_s)
+            clearing_source = "Manual"
         else:
-            applied_clearing_time_s = clearing_time_cap_s
-            clearing_source = "Cap (no relay trip)"
+            relay_clearing_time_s = math.inf
+            if not relay_df_for_full_arc.empty:
+                scenario_trip_times = [
+                    calc_relay_time_s(
+                        current_a=arc_current_ka_scenario * 1000,
+                        pickup_a=float(row["Pickup_A"]),
+                        tms=float(row["TMS"]),
+                        curve_name=str(row["Curve"]),
+                        inst_pickup_a=float(row["Inst_A"]),
+                    )
+                    for _, row in relay_df_for_full_arc.iterrows()
+                ]
+                finite_trip_times = [time for time in scenario_trip_times if math.isfinite(time)]
+                if finite_trip_times:
+                    relay_clearing_time_s = max(0.05, min(finite_trip_times))
+
+            if math.isfinite(relay_clearing_time_s):
+                applied_clearing_time_s = min(relay_clearing_time_s, clearing_time_cap_s)
+                clearing_source = "Relay (capped)" if relay_clearing_time_s > clearing_time_cap_s else "Relay"
+            else:
+                applied_clearing_time_s = clearing_time_cap_s
+                clearing_source = "Cap (no relay trip)"
 
         incident_energy_scenario = (
             0.2
@@ -1684,6 +1705,10 @@ with full_arc_tab:
         f"Configuration: {full_arc_orientation.lower()} electrodes, {full_arc_enclosure.lower()} switchgear "
         f"(factor {full_config_factor:.2f}); working distance {working_distance_mm_full} mm."
     )
+    if clearing_time_method == "Manual fixed":
+        st.caption(f"Clearing time mode: manual fixed at {manual_clearing_time_s:.3f} s.")
+    else:
+        st.caption(f"Clearing time mode: relay-derived with cap {clearing_time_cap_s:.3f} s.")
 
     full_result_col1, full_result_col2, full_result_col3, full_result_col4 = st.columns(4)
     with full_result_col1:
