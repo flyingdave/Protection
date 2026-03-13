@@ -5,6 +5,7 @@ import math
 from pathlib import Path
 from typing import Optional, Tuple
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -1161,7 +1162,43 @@ with protection_tab:
             tcc_df[str(row["Device"])] = cleaned_times
 
         st.markdown("#### Time-Current Curves (Approximate)")
-        st.line_chart(tcc_df.set_index("Current_A"), use_container_width=True)
+        tcc_long_df = tcc_df.melt(
+            id_vars="Current_A",
+            var_name="Device",
+            value_name="Operate_s",
+        ).dropna()
+        tcc_long_df = tcc_long_df[(tcc_long_df["Current_A"] > 0) & (tcc_long_df["Operate_s"] > 0)]
+
+        if tcc_long_df.empty:
+            st.warning("No valid relay curve points available for log-log plotting.")
+        else:
+            tcc_chart = (
+                alt.Chart(tcc_long_df)
+                .mark_line()
+                .encode(
+                    x=alt.X(
+                        "Current_A:Q",
+                        title="Current (A)",
+                        scale=alt.Scale(type="log"),
+                        axis=alt.Axis(grid=True),
+                    ),
+                    y=alt.Y(
+                        "Operate_s:Q",
+                        title="Operating Time (s)",
+                        scale=alt.Scale(type="log"),
+                        axis=alt.Axis(grid=True),
+                    ),
+                    color=alt.Color("Device:N", title="Device"),
+                    tooltip=[
+                        alt.Tooltip("Device:N", title="Device"),
+                        alt.Tooltip("Current_A:Q", title="Current (A)", format=".2f"),
+                        alt.Tooltip("Operate_s:Q", title="Time (s)", format=".4f"),
+                    ],
+                )
+                .properties(height=420)
+                .configure_axis(grid=True)
+            )
+            st.altair_chart(tcc_chart, use_container_width=True)
 
 with arc_tab:
     st.subheader("Arc-Flash Screening Estimate")
