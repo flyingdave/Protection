@@ -662,13 +662,14 @@ with st.sidebar:
 
     st.caption(f"Active study: {project_name}")
 
-network_tab, fault_tab, protection_tab, arc_tab, formula_tab = st.tabs(
+network_tab, fault_tab, protection_tab, arc_tab, full_arc_tab, formula_tab = st.tabs(
     [
         "1) Network Inputs",
         "2) Fault Levels",
         "3) Protection & Grading",
         "4) Arc-Flash Estimate",
-        "5) Formula Reference",
+        "5) Full Arc-Flash Calc",
+        "6) Formula Reference",
     ]
 )
 
@@ -1545,6 +1546,168 @@ with arc_tab:
         st.metric("Arc flash boundary", f"{arc_flash_boundary_mm:.0f} mm")
 
     st.info(arc_flash_category(incident_energy_cal_cm2))
+
+with full_arc_tab:
+    st.subheader("Full Arc-Flash Calculation (Detailed Screening)")
+    st.caption(
+        "Expanded arc-flash workflow using min/nominal/max arcing-current scenarios and relay-based clearing times. "
+        "This remains a detailed screening model and is not a substitute for a full IEEE 1584 study."
+    )
+
+    full_col1, full_col2, full_col3 = st.columns(3)
+    with full_col1:
+        bolted_fault_current_ka_full = st.number_input(
+            "Bolted fault current (kA) - full calc",
+            min_value=0.1,
+            max_value=200.0,
+            value=float(st.session_state.get("bolted_fault_current_ka", 10.0)),
+            step=0.1,
+            key="full_arc_bolted_fault_current_ka",
+        )
+        arc_current_factor_full = st.slider(
+            "Arc current factor - full calc",
+            0.50,
+            1.00,
+            value=float(st.session_state.get("arc_current_factor", 0.85)),
+            step=0.01,
+            key="full_arc_arc_current_factor",
+        )
+        arc_current_variation_pct = st.slider(
+            "Arcing current variation (%)",
+            min_value=0,
+            max_value=30,
+            value=15,
+            step=1,
+            key="full_arc_current_variation_pct",
+        )
+
+    with full_col2:
+        clearing_time_cap_s = st.number_input(
+            "Clearing time cap (s)",
+            min_value=0.01,
+            max_value=5.00,
+            value=float(st.session_state.get("clearing_time_s", 0.20)),
+            step=0.01,
+            key="full_arc_clearing_time_cap_s",
+        )
+        working_distance_mm_full = st.number_input(
+            "Working distance (mm) - full calc",
+            min_value=200,
+            max_value=2000,
+            value=int(st.session_state.get("working_distance_mm", 910)),
+            step=25,
+            key="full_arc_working_distance_mm",
+        )
+
+    with full_col3:
+        default_orientation = str(st.session_state.get("arc_orientation", "Vertical"))
+        orientation_options = ["Horizontal", "Vertical"]
+        full_arc_orientation = st.selectbox(
+            "Electrode orientation - full calc",
+            options=orientation_options,
+            index=orientation_options.index(default_orientation) if default_orientation in orientation_options else 1,
+            key="full_arc_orientation",
+        )
+        default_enclosure = str(st.session_state.get("arc_enclosure", "Enclosed"))
+        enclosure_options = ["Enclosed", "Unenclosed"]
+        full_arc_enclosure = st.selectbox(
+            "Switchgear construction - full calc",
+            options=enclosure_options,
+            index=enclosure_options.index(default_enclosure) if default_enclosure in enclosure_options else 0,
+            key="full_arc_enclosure",
+        )
+
+    full_config_factor = ARC_FLASH_SWITCHGEAR_FACTOR_MAP[(full_arc_orientation, full_arc_enclosure)]
+    variation_factor = float(arc_current_variation_pct) / 100.0
+    arc_current_nominal_ka = bolted_fault_current_ka_full * arc_current_factor_full
+    arc_current_min_ka = arc_current_nominal_ka * (1.0 - variation_factor)
+    arc_current_max_ka = arc_current_nominal_ka * (1.0 + variation_factor)
+    distance_multiplier_full = (610 / max(working_distance_mm_full, 1)) ** 1.5
+
+    relay_df_for_full_arc = sanitize_relay_settings(pd.DataFrame(st.session_state.relay_settings))
+
+    scenario_rows = []
+    for scenario_name, arc_current_ka_scenario in [
+        ("Min arcing current", arc_current_min_ka),
+        ("Nominal arcing current", arc_current_nominal_ka),
+        ("Max arcing current", arc_current_max_ka),
+    ]:
+        relay_clearing_time_s = math.inf
+        if not relay_df_for_full_arc.empty:
+            scenario_trip_times = [
+                calc_relay_time_s(
+                    current_a=arc_current_ka_scenario * 1000,
+                    pickup_a=float(row["Pickup_A"]),
+                    tms=float(row["TMS"]),
+                    curve_name=str(row["Curve"]),
+                    inst_pickup_a=float(row["Inst_A"]),
+                )
+                for _, row in relay_df_for_full_arc.iterrows()
+            ]
+            finite_trip_times = [time for time in scenario_trip_times if math.isfinite(time)]
+            if finite_trip_times:
+                relay_clearing_time_s = max(0.05, min(finite_trip_times))
+
+        if math.isfinite(relay_clearing_time_s):
+            applied_clearing_time_s = min(relay_clearing_time_s, clearing_time_cap_s)
+            clearing_source = "Relay (capped)" if relay_clearing_time_s > clearing_time_cap_s else "Relay"
+        else:
+            applied_clearing_time_s = clearing_time_cap_s
+            clearing_source = "Cap (no relay trip)"
+
+        incident_energy_scenario = (
+            0.2
+            * arc_current_ka_scenario
+            * applied_clearing_time_s
+            * full_config_factor
+            * distance_multiplier_full
+        )
+        arc_flash_boundary_scenario_mm = 610 * (
+            (max(incident_energy_scenario, 0.001) / 1.2) ** (1 / 1.5)
+        )
+
+        scenario_rows.append(
+            {
+                "Scenario": scenario_name,
+                "Arc_Current_kA": arc_current_ka_scenario,
+                "Clearing_s": applied_clearing_time_s,
+                "Clearing_Source": clearing_source,
+                "Incident_Energy_cal_cm2": incident_energy_scenario,
+                "Arc_Flash_Boundary_mm": arc_flash_boundary_scenario_mm,
+            }
+        )
+
+    full_arc_df = pd.DataFrame(scenario_rows)
+    worst_row = full_arc_df.loc[full_arc_df["Incident_Energy_cal_cm2"].idxmax()]
+
+    st.caption(
+        f"Configuration: {full_arc_orientation.lower()} electrodes, {full_arc_enclosure.lower()} switchgear "
+        f"(factor {full_config_factor:.2f}); working distance {working_distance_mm_full} mm."
+    )
+
+    full_result_col1, full_result_col2, full_result_col3, full_result_col4 = st.columns(4)
+    with full_result_col1:
+        st.metric("Nominal arcing current", f"{arc_current_nominal_ka:.2f} kA")
+    with full_result_col2:
+        st.metric("Worst incident energy", f"{float(worst_row['Incident_Energy_cal_cm2']):.2f} cal/cm²")
+    with full_result_col3:
+        st.metric("Worst arc flash boundary", f"{float(worst_row['Arc_Flash_Boundary_mm']):.0f} mm")
+    with full_result_col4:
+        st.metric("Controlling scenario", str(worst_row["Scenario"]))
+
+    st.dataframe(
+        full_arc_df.style.format(
+            {
+                "Arc_Current_kA": "{:.2f}",
+                "Clearing_s": "{:.3f}",
+                "Incident_Energy_cal_cm2": "{:.2f}",
+                "Arc_Flash_Boundary_mm": "{:.0f}",
+            }
+        ),
+        use_container_width=True,
+    )
+
+    st.info(arc_flash_category(float(worst_row["Incident_Energy_cal_cm2"])))
 
 with formula_tab:
     st.subheader("Formula Reference")
