@@ -17,9 +17,96 @@ CURVE_CONSTANTS = {
     "IEC Long-Time Inverse": (120.0, 1.0),
 }
 
+OC_EF_RELAY_MODELS = ["P122", "CDG", "PBO"]
+COMMISSIONING_CURVE_OPTIONS = list(CURVE_CONSTANTS.keys()) + ["Definite Time"]
+COMMISSIONING_TEST_MULTIPLIERS = [1.5, 3.0, 6.0]
+OC_EF_MODEL_NOTES = {
+    "P122": "Digital OC/EF worksheet using the selected IEC inverse or definite-time stage.",
+    "CDG": "Electromechanical OC/EF worksheet using the selected IEC-style commissioning curve approximation.",
+    "PBO": "Static OC/EF worksheet using the selected IEC inverse or definite-time stage.",
+}
+
+SEL787_DEFAULT_NOTES = (
+    "SEL-787 differential screening uses a standard percentage-restraint commissioning characteristic at relay secondary current level. "
+    "Verify final test quantities against the installed compensation, vector group, and winding configuration before site injection."
+)
+
+TRANSLAY_RELAY_OPTIONS = ["H04", "H05", "H06", "H07", "Numerical (Newer)"]
+TRANSLAY_MODEL_NOTES = {
+    "H04": "H04 electromechanical translay worksheet using restrained-spill characteristic and fixed operate-time target.",
+    "H05": "H05 translay worksheet using restrained-spill characteristic and fixed operate-time target.",
+    "H06": "H06 translay worksheet using restrained-spill characteristic and fixed operate-time target.",
+    "H07": "H07 translay worksheet using restrained-spill characteristic and fixed operate-time target.",
+    "Numerical (Newer)": "Newer numerical translay worksheet with optional high-set spill element.",
+}
+TRANSLAY_MODEL_DEFAULTS = {
+    "H04": {"pickup_a": 0.20, "slope_pct": 20.0, "operate_time_s": 0.10, "high_set_spill_a": 0.0},
+    "H05": {"pickup_a": 0.18, "slope_pct": 22.0, "operate_time_s": 0.09, "high_set_spill_a": 0.0},
+    "H06": {"pickup_a": 0.16, "slope_pct": 25.0, "operate_time_s": 0.08, "high_set_spill_a": 0.0},
+    "H07": {"pickup_a": 0.14, "slope_pct": 30.0, "operate_time_s": 0.07, "high_set_spill_a": 0.0},
+    "Numerical (Newer)": {"pickup_a": 0.10, "slope_pct": 35.0, "operate_time_s": 0.05, "high_set_spill_a": 0.60},
+}
+COMMISSIONING_WIDGET_DEFAULTS = {
+    "oc_ef_device_name": "Feeder 1",
+    "oc_ef_ct_primary_a": 200.0,
+    "oc_ef_ct_secondary_a": 1.0,
+    "oc_ef_pickup_secondary_a": 1.0,
+    "oc_ef_tms": 0.10,
+    "oc_ef_definite_time_s": 0.30,
+    "oc_ef_inst_pickup_a": 0.00,
+    "oc_ef_notes": "",
+    "sel787_asset_name": "Transformer 1",
+    "sel787_w1_ct_primary_a": 800.0,
+    "sel787_w1_ct_secondary_a": 1.0,
+    "sel787_w2_ct_primary_a": 800.0,
+    "sel787_w2_ct_secondary_a": 1.0,
+    "sel787_pickup_a": 0.30,
+    "sel787_slope1_pct": 25.0,
+    "sel787_slope2_pct": 50.0,
+    "sel787_breakpoint_a": 4.0,
+    "sel787_unrestrained_a": 8.0,
+    "sel787_h2_block_pct": 15.0,
+    "sel787_h5_block_pct": 35.0,
+    "translay_circuit_name": "Feeder Differential 1",
+    "translay_local_ct_primary_a": 200.0,
+    "translay_local_ct_secondary_a": 1.0,
+    "translay_remote_ct_primary_a": 200.0,
+    "translay_remote_ct_secondary_a": 1.0,
+    "translay_pickup_a": TRANSLAY_MODEL_DEFAULTS["H04"]["pickup_a"],
+    "translay_slope_pct": TRANSLAY_MODEL_DEFAULTS["H04"]["slope_pct"],
+    "translay_operate_time_s": TRANSLAY_MODEL_DEFAULTS["H04"]["operate_time_s"],
+    "translay_high_set_spill_a": TRANSLAY_MODEL_DEFAULTS["H04"]["high_set_spill_a"],
+    "translay_notes": "",
+}
+
 RELAY_EXPORT_COLUMNS = ["Order", "Device", "Curve", "Pickup_A", "TMS", "Inst_A"]
 APP_STATE_FILE = Path(".streamlit/last_entered_state.json")
-APP_REVISION = "Rev 0.1"
+APP_REVISION = "Rev 0.2"
+
+NETWORK_INPUT_MODE_OPTIONS = ["Template Inputs", "Line-by-line Builder"]
+NETWORK_ELEMENT_TYPE_OPTIONS = ["Source", "Reactor", "Cable", "Transformer", "Busbar", "Custom Z"]
+NETWORK_ELEMENT_DATA_MODE_OPTIONS = ["Common Data", "Direct Seq Z"]
+NETWORK_ELEMENT_COLUMNS = [
+    "Order",
+    "Name",
+    "Element_Type",
+    "Data_Mode",
+    "Voltage_kV",
+    "Parallel_Count",
+    "Source_SC_MVA",
+    "XR",
+    "Reactance_Ohm",
+    "Length_km",
+    "Cable_Type",
+    "HV_kV",
+    "LV_kV",
+    "Rating_MVA",
+    "Z_pct",
+    "R1_ohm",
+    "X1_ohm",
+    "R0_ohm",
+    "X0_ohm",
+]
 
 CABLE_SEQUENCE_LIBRARY = {
     "33kV 0.25sqin cu HSL": {
@@ -114,6 +201,7 @@ BASELINE_RELAY_SETTINGS = [
 
 DEFAULT_NETWORK_PRESET = {
     "project_name": "Protection - 33/11kV Network",
+    "network_input_mode": "Template Inputs",
     "grading_margin_s": 0.30,
     "v_ll_kv": 11.0,
     "frequency_hz": 50,
@@ -145,6 +233,177 @@ DEFAULT_NETWORK_PRESET = {
     "arc_enclosure": "Enclosed",
 }
 
+DEFAULT_NETWORK_ELEMENTS = [
+    {
+        "Order": 1,
+        "Name": "33kV Source",
+        "Element_Type": "Source",
+        "Data_Mode": "Common Data",
+        "Voltage_kV": 33.0,
+        "Parallel_Count": 1,
+        "Source_SC_MVA": 1850.0,
+        "XR": 10.0,
+        "Reactance_Ohm": 0.0,
+        "Length_km": 0.0,
+        "Cable_Type": "Default Cable",
+        "HV_kV": 33.0,
+        "LV_kV": 33.0,
+        "Rating_MVA": 0.0,
+        "Z_pct": 0.0,
+        "R1_ohm": 0.0,
+        "X1_ohm": 0.0,
+        "R0_ohm": 0.0,
+        "X0_ohm": 0.0,
+    },
+    {
+        "Order": 2,
+        "Name": "33kV Reactor",
+        "Element_Type": "Reactor",
+        "Data_Mode": "Common Data",
+        "Voltage_kV": 33.0,
+        "Parallel_Count": 1,
+        "Source_SC_MVA": 0.0,
+        "XR": 0.0,
+        "Reactance_Ohm": 3.23,
+        "Length_km": 0.0,
+        "Cable_Type": "Default Cable",
+        "HV_kV": 33.0,
+        "LV_kV": 33.0,
+        "Rating_MVA": 0.0,
+        "Z_pct": 0.0,
+        "R1_ohm": 0.0,
+        "X1_ohm": 0.0,
+        "R0_ohm": 0.0,
+        "X0_ohm": 0.0,
+    },
+    {
+        "Order": 3,
+        "Name": "33kV Cable",
+        "Element_Type": "Cable",
+        "Data_Mode": "Common Data",
+        "Voltage_kV": 33.0,
+        "Parallel_Count": 1,
+        "Source_SC_MVA": 0.0,
+        "XR": 0.0,
+        "Reactance_Ohm": 0.0,
+        "Length_km": 3.0,
+        "Cable_Type": "33kV 0.25sqin cu HSL",
+        "HV_kV": 33.0,
+        "LV_kV": 33.0,
+        "Rating_MVA": 0.0,
+        "Z_pct": 0.0,
+        "R1_ohm": 0.0,
+        "X1_ohm": 0.0,
+        "R0_ohm": 0.0,
+        "X0_ohm": 0.0,
+    },
+    {
+        "Order": 4,
+        "Name": "33/11kV Transformer",
+        "Element_Type": "Transformer",
+        "Data_Mode": "Common Data",
+        "Voltage_kV": 11.0,
+        "Parallel_Count": 1,
+        "Source_SC_MVA": 0.0,
+        "XR": 8.0,
+        "Reactance_Ohm": 0.0,
+        "Length_km": 0.0,
+        "Cable_Type": "Default Cable",
+        "HV_kV": 33.0,
+        "LV_kV": 11.0,
+        "Rating_MVA": 13.5,
+        "Z_pct": 7.2,
+        "R1_ohm": 0.0,
+        "X1_ohm": 0.0,
+        "R0_ohm": 0.0,
+        "X0_ohm": 0.0,
+    },
+    {
+        "Order": 5,
+        "Name": "11kV Transformer Cable",
+        "Element_Type": "Cable",
+        "Data_Mode": "Common Data",
+        "Voltage_kV": 11.0,
+        "Parallel_Count": 1,
+        "Source_SC_MVA": 0.0,
+        "XR": 0.0,
+        "Reactance_Ohm": 0.0,
+        "Length_km": 0.01,
+        "Cable_Type": "11kV XLPE 3c 300mm2 Cu",
+        "HV_kV": 11.0,
+        "LV_kV": 11.0,
+        "Rating_MVA": 0.0,
+        "Z_pct": 0.0,
+        "R1_ohm": 0.0,
+        "X1_ohm": 0.0,
+        "R0_ohm": 0.0,
+        "X0_ohm": 0.0,
+    },
+    {
+        "Order": 6,
+        "Name": "11kV Transformer Busbar",
+        "Element_Type": "Busbar",
+        "Data_Mode": "Common Data",
+        "Voltage_kV": 11.0,
+        "Parallel_Count": 1,
+        "Source_SC_MVA": 0.0,
+        "XR": 0.0,
+        "Reactance_Ohm": 0.0,
+        "Length_km": 0.0,
+        "Cable_Type": "Default Cable",
+        "HV_kV": 11.0,
+        "LV_kV": 11.0,
+        "Rating_MVA": 0.0,
+        "Z_pct": 0.0,
+        "R1_ohm": 0.0,
+        "X1_ohm": 0.0,
+        "R0_ohm": 0.0,
+        "X0_ohm": 0.0,
+    },
+    {
+        "Order": 7,
+        "Name": "11kV Feeder Cable",
+        "Element_Type": "Cable",
+        "Data_Mode": "Common Data",
+        "Voltage_kV": 11.0,
+        "Parallel_Count": 1,
+        "Source_SC_MVA": 0.0,
+        "XR": 0.0,
+        "Reactance_Ohm": 0.0,
+        "Length_km": 0.5,
+        "Cable_Type": "Default Cable",
+        "HV_kV": 11.0,
+        "LV_kV": 11.0,
+        "Rating_MVA": 0.0,
+        "Z_pct": 0.0,
+        "R1_ohm": 0.0,
+        "X1_ohm": 0.0,
+        "R0_ohm": 0.0,
+        "X0_ohm": 0.0,
+    },
+    {
+        "Order": 8,
+        "Name": "11kV Remote Busbar",
+        "Element_Type": "Busbar",
+        "Data_Mode": "Common Data",
+        "Voltage_kV": 11.0,
+        "Parallel_Count": 1,
+        "Source_SC_MVA": 0.0,
+        "XR": 0.0,
+        "Reactance_Ohm": 0.0,
+        "Length_km": 0.0,
+        "Cable_Type": "Default Cable",
+        "HV_kV": 11.0,
+        "LV_kV": 11.0,
+        "Rating_MVA": 0.0,
+        "Z_pct": 0.0,
+        "R1_ohm": 0.0,
+        "X1_ohm": 0.0,
+        "R0_ohm": 0.0,
+        "X0_ohm": 0.0,
+    },
+]
+
 NETWORK_ARRANGEMENT = [
     "33kV source (fault level 1850 MVA)",
     "33kV CB",
@@ -166,8 +425,8 @@ NETWORK_ARRANGEMENT = [
 DEFAULT_STUDY_CASE = DEFAULT_NETWORK_PRESET.copy()
 
 STUDY_CASE_OPTION_VALUES = {
+    "network_input_mode": set(NETWORK_INPUT_MODE_OPTIONS),
     "frequency_hz": {50, 60},
-    "study_bus": {"11kV Transformer Busbar", "11kV Remote Busbar"},
     "fault_type": {"3-Phase", "Line-Line", "Line-Ground"},
     "arc_orientation": {"Horizontal", "Vertical"},
     "arc_enclosure": {"Enclosed", "Unenclosed"},
@@ -296,6 +555,271 @@ def calc_relay_time_s(
     return tms * k / denominator
 
 
+def calc_commissioning_time_s(
+    current_a: float,
+    pickup_a: float,
+    curve_name: str,
+    tms: float,
+    definite_time_s: float,
+    inst_pickup_a: float,
+) -> float:
+    if pickup_a <= 0 or current_a <= pickup_a:
+        return math.inf
+
+    if inst_pickup_a > 0 and current_a >= inst_pickup_a:
+        return 0.05
+
+    if curve_name == "Definite Time":
+        return definite_time_s if definite_time_s > 0 else math.inf
+
+    return calc_relay_time_s(
+        current_a=current_a,
+        pickup_a=pickup_a,
+        tms=tms,
+        curve_name=curve_name,
+        inst_pickup_a=0.0,
+    )
+
+
+def build_oc_ef_test_points(
+    pickup_secondary_a: float,
+    curve_name: str,
+    tms: float,
+    definite_time_s: float,
+    inst_pickup_a: float,
+    ct_primary_a: float,
+    ct_secondary_a: float,
+    test_multipliers: Optional[list[float]] = None,
+) -> pd.DataFrame:
+    multipliers = test_multipliers or COMMISSIONING_TEST_MULTIPLIERS
+    ct_ratio = (ct_primary_a / ct_secondary_a) if ct_secondary_a > 0 else math.nan
+
+    rows = []
+    for index, multiplier in enumerate(multipliers, start=1):
+        injection_current_secondary_a = pickup_secondary_a * multiplier
+        injection_current_primary_a = (
+            injection_current_secondary_a * ct_ratio if math.isfinite(ct_ratio) else math.nan
+        )
+        expected_time_s = calc_commissioning_time_s(
+            current_a=injection_current_secondary_a,
+            pickup_a=pickup_secondary_a,
+            curve_name=curve_name,
+            tms=tms,
+            definite_time_s=definite_time_s,
+            inst_pickup_a=inst_pickup_a,
+        )
+        operating_mode = "Definite Time" if curve_name == "Definite Time" else "Inverse"
+        if inst_pickup_a > 0 and injection_current_secondary_a >= inst_pickup_a:
+            operating_mode = "High-set / instantaneous"
+
+        rows.append(
+            {
+                "Point": f"P{index}",
+                "Purpose": f"{multiplier:.2f} x pickup",
+                "Injection_Current_Secondary_A": injection_current_secondary_a,
+                "Injection_Current_Primary_A": injection_current_primary_a,
+                "Expected_Operate_s": expected_time_s,
+                "Expected_Mode": operating_mode,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def sel787_operate_threshold(
+    restraint_current_a: float,
+    pickup_a: float,
+    slope1_pct: float,
+    slope2_pct: float,
+    breakpoint_a: float,
+) -> float:
+    restraint_current_a = max(restraint_current_a, 0.0)
+    pickup_a = max(pickup_a, 0.0)
+    slope1 = max(slope1_pct, 0.0) / 100.0
+    slope2 = max(slope2_pct, 0.0) / 100.0
+    breakpoint_a = max(breakpoint_a, 0.0)
+
+    if restraint_current_a <= breakpoint_a:
+        return pickup_a + slope1 * restraint_current_a
+
+    return pickup_a + slope1 * breakpoint_a + slope2 * (restraint_current_a - breakpoint_a)
+
+
+def sel787_current_pair_from_operate_restraint(
+    operate_current_a: float,
+    restraint_current_a: float,
+) -> tuple[float, float]:
+    side_1_current_a = max(restraint_current_a + (operate_current_a / 2.0), 0.0)
+    side_2_current_a = max(restraint_current_a - (operate_current_a / 2.0), 0.0)
+    return side_1_current_a, side_2_current_a
+
+
+def build_sel787_test_points(
+    pickup_a: float,
+    slope1_pct: float,
+    slope2_pct: float,
+    breakpoint_a: float,
+    unrestrained_a: float,
+) -> pd.DataFrame:
+    low_bias_restraint_a = (breakpoint_a * 0.5) if breakpoint_a > 0 else max(1.0, pickup_a)
+    high_bias_restraint_a = (breakpoint_a * 1.5) if breakpoint_a > 0 else max(4.0, pickup_a * 4.0)
+    stability_restraint_a = max(high_bias_restraint_a, pickup_a * 4.0, 2.0)
+
+    rows = []
+
+    stability_side_1_a, stability_side_2_a = sel787_current_pair_from_operate_restraint(
+        operate_current_a=0.0,
+        restraint_current_a=stability_restraint_a,
+    )
+    rows.append(
+        {
+            "Test": "Balanced stability",
+            "Purpose": "Through-current stability check",
+            "Irest_A": stability_restraint_a,
+            "Iop_A": 0.0,
+            "Side1_Secondary_A": stability_side_1_a,
+            "Side2_Secondary_A": stability_side_2_a,
+            "Expected_Result": "No trip",
+            "Characteristic_Threshold_A": sel787_operate_threshold(
+                stability_restraint_a,
+                pickup_a,
+                slope1_pct,
+                slope2_pct,
+                breakpoint_a,
+            ),
+            "Notes": "Inject equal compensated currents on both sides.",
+        }
+    )
+
+    for test_name, purpose, restraint_current_a in [
+        ("Low-bias operate", "Pickup / slope-1 operate check", low_bias_restraint_a),
+        ("High-bias operate", "Slope-2 operate check", high_bias_restraint_a),
+    ]:
+        threshold_a = sel787_operate_threshold(
+            restraint_current_a,
+            pickup_a,
+            slope1_pct,
+            slope2_pct,
+            breakpoint_a,
+        )
+        operate_current_a = max(threshold_a * 1.10, pickup_a * 1.05)
+        note_text = "Inject currents in opposing sense to create operate current."
+        if unrestrained_a > 0 and operate_current_a >= unrestrained_a:
+            note_text += " Requested point may also operate the unrestrained element."
+
+        side_1_current_a, side_2_current_a = sel787_current_pair_from_operate_restraint(
+            operate_current_a=operate_current_a,
+            restraint_current_a=restraint_current_a,
+        )
+        rows.append(
+            {
+                "Test": test_name,
+                "Purpose": purpose,
+                "Irest_A": restraint_current_a,
+                "Iop_A": operate_current_a,
+                "Side1_Secondary_A": side_1_current_a,
+                "Side2_Secondary_A": side_2_current_a,
+                "Expected_Result": "Trip",
+                "Characteristic_Threshold_A": threshold_a,
+                "Notes": note_text,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def translay_trip_threshold(
+    through_current_a: float,
+    pickup_a: float,
+    slope_pct: float,
+) -> float:
+    through_current_a = max(through_current_a, 0.0)
+    pickup_a = max(pickup_a, 0.0)
+    slope = max(slope_pct, 0.0) / 100.0
+    return pickup_a + slope * through_current_a
+
+
+def translay_local_remote_from_through_spill(
+    through_current_a: float,
+    spill_current_a: float,
+) -> tuple[float, float]:
+    local_current_a = max(through_current_a + (spill_current_a / 2.0), 0.0)
+    remote_current_a = max(through_current_a - (spill_current_a / 2.0), 0.0)
+    return local_current_a, remote_current_a
+
+
+def build_translay_test_points(
+    pickup_a: float,
+    slope_pct: float,
+    operate_time_s: float,
+    high_set_spill_a: float,
+) -> pd.DataFrame:
+    pickup_a = max(pickup_a, 0.01)
+    slope_pct = max(slope_pct, 0.0)
+    operate_time_s = max(operate_time_s, 0.01)
+    high_set_spill_a = max(high_set_spill_a, 0.0)
+
+    low_through_a = max(1.0, pickup_a * 4.0)
+    high_through_a = max(2.0, low_through_a * 2.0)
+    stability_through_a = max(2.0, high_through_a)
+
+    test_plan_rows = []
+
+    stability_threshold_a = translay_trip_threshold(stability_through_a, pickup_a, slope_pct)
+    stability_local_a, stability_remote_a = translay_local_remote_from_through_spill(
+        through_current_a=stability_through_a,
+        spill_current_a=0.0,
+    )
+    test_plan_rows.append(
+        {
+            "Point": "T1",
+            "Purpose": "Through-current stability",
+            "Through_Current_A": stability_through_a,
+            "Spill_Current_A": 0.0,
+            "Local_Current_A": stability_local_a,
+            "Remote_Current_A": stability_remote_a,
+            "Trip_Threshold_A": stability_threshold_a,
+            "Expected_Result": "No trip",
+            "Expected_Operate_s": math.inf,
+            "Expected_Mode": "Stability",
+        }
+    )
+
+    for point_name, purpose, through_current_a in [
+        ("T2", "Low-bias operate", low_through_a),
+        ("T3", "High-bias operate", high_through_a),
+    ]:
+        threshold_a = translay_trip_threshold(through_current_a, pickup_a, slope_pct)
+        spill_current_a = max(threshold_a * 1.10, pickup_a * 1.05)
+        local_current_a, remote_current_a = translay_local_remote_from_through_spill(
+            through_current_a=through_current_a,
+            spill_current_a=spill_current_a,
+        )
+
+        expected_mode = "Restrained spill"
+        expected_operate_s = operate_time_s
+        if high_set_spill_a > 0 and spill_current_a >= high_set_spill_a:
+            expected_mode = "High-set spill"
+            expected_operate_s = 0.05
+
+        test_plan_rows.append(
+            {
+                "Point": point_name,
+                "Purpose": purpose,
+                "Through_Current_A": through_current_a,
+                "Spill_Current_A": spill_current_a,
+                "Local_Current_A": local_current_a,
+                "Remote_Current_A": remote_current_a,
+                "Trip_Threshold_A": threshold_a,
+                "Expected_Result": "Trip",
+                "Expected_Operate_s": expected_operate_s,
+                "Expected_Mode": expected_mode,
+            }
+        )
+
+    return pd.DataFrame(test_plan_rows)
+
+
 def format_time_value(time_s: float) -> str:
     return f"{time_s:.3f}" if math.isfinite(time_s) else "No trip"
 
@@ -340,6 +864,343 @@ def sanitize_relay_settings(settings_df: pd.DataFrame) -> pd.DataFrame:
 
 def default_relay_settings_df() -> pd.DataFrame:
     return pd.DataFrame(BASELINE_RELAY_SETTINGS)[RELAY_EXPORT_COLUMNS]
+
+
+def default_network_elements_df() -> pd.DataFrame:
+    return pd.DataFrame(DEFAULT_NETWORK_ELEMENTS)[NETWORK_ELEMENT_COLUMNS]
+
+
+def sanitize_network_elements(elements_df: pd.DataFrame) -> pd.DataFrame:
+    if elements_df.empty:
+        return pd.DataFrame(columns=NETWORK_ELEMENT_COLUMNS)
+
+    network_df = elements_df.copy()
+    for column in NETWORK_ELEMENT_COLUMNS:
+        if column not in network_df.columns:
+            network_df[column] = 0.0 if column not in {"Name", "Element_Type", "Data_Mode", "Cable_Type"} else ""
+
+    numeric_columns = [
+        "Order",
+        "Voltage_kV",
+        "Parallel_Count",
+        "Source_SC_MVA",
+        "XR",
+        "Reactance_Ohm",
+        "Length_km",
+        "HV_kV",
+        "LV_kV",
+        "Rating_MVA",
+        "Z_pct",
+        "R1_ohm",
+        "X1_ohm",
+        "R0_ohm",
+        "X0_ohm",
+    ]
+    for column in numeric_columns:
+        network_df[column] = pd.to_numeric(network_df[column], errors="coerce").fillna(0.0)
+
+    network_df["Order"] = network_df["Order"].replace(0.0, pd.NA)
+    network_df["Order"] = network_df["Order"].fillna(pd.Series(range(1, len(network_df) + 1), index=network_df.index))
+    network_df["Order"] = network_df["Order"].astype(int)
+    network_df["Parallel_Count"] = network_df["Parallel_Count"].clip(lower=1).round().astype(int)
+
+    network_df["Name"] = network_df["Name"].fillna("").astype(str).str.strip()
+    network_df["Element_Type"] = network_df["Element_Type"].fillna("Busbar").astype(str).str.strip()
+    network_df["Data_Mode"] = network_df["Data_Mode"].fillna("Common Data").astype(str).str.strip()
+    network_df["Cable_Type"] = network_df["Cable_Type"].fillna("Default Cable").astype(str).str.strip()
+
+    network_df["Element_Type"] = network_df["Element_Type"].where(
+        network_df["Element_Type"].isin(NETWORK_ELEMENT_TYPE_OPTIONS),
+        "Busbar",
+    )
+    network_df["Data_Mode"] = network_df["Data_Mode"].where(
+        network_df["Data_Mode"].isin(NETWORK_ELEMENT_DATA_MODE_OPTIONS),
+        "Common Data",
+    )
+    all_cable_options = set(HV_CABLE_OPTIONS) | set(LV_CABLE_OPTIONS)
+    network_df["Cable_Type"] = network_df["Cable_Type"].where(
+        network_df["Cable_Type"].isin(all_cable_options),
+        "Default Cable",
+    )
+
+    network_df = network_df.sort_values(["Order", "Name"]).reset_index(drop=True)
+    for index, row in network_df.iterrows():
+        if not row["Name"]:
+            network_df.at[index, "Name"] = f"{row['Element_Type']} {int(row['Order'])}"
+
+    return network_df[NETWORK_ELEMENT_COLUMNS]
+
+
+def refer_impedance_to_voltage(z_value: complex, from_kv: float, to_kv: float) -> complex:
+    if from_kv <= 0 or to_kv <= 0 or math.isclose(from_kv, to_kv, rel_tol=1e-9, abs_tol=1e-9):
+        return z_value
+    return z_value * ((to_kv / from_kv) ** 2)
+
+
+def direct_sequence_impedance_from_row(
+    row: pd.Series,
+    z0_multiplier_fallback: float = 1.0,
+    default_z0_to_z1: bool = False,
+) -> tuple[complex, complex, complex]:
+    z1 = complex(float(row["R1_ohm"]), float(row["X1_ohm"]))
+    z2 = z1
+    raw_z0 = complex(float(row["R0_ohm"]), float(row["X0_ohm"]))
+    if abs(raw_z0) > 0:
+        z0 = raw_z0
+    elif default_z0_to_z1:
+        z0 = z1 * z0_multiplier_fallback
+    else:
+        z0 = z1
+    return z1, z2, z0
+
+
+def build_single_line_diagram_dot(network_df: pd.DataFrame) -> str:
+    lines = [
+        "digraph NetworkSingleLine {",
+        "rankdir=LR;",
+        'graph [fontname="Helvetica", labelloc="t"];',
+        'node [fontname="Helvetica", shape=box, style="rounded,filled", fillcolor="#F7F9FC"];',
+        'edge [fontname="Helvetica"];',
+    ]
+
+    previous_node_id = None
+    for index, row in network_df.iterrows():
+        node_id = f"n{index}"
+        element_type = str(row["Element_Type"])
+        voltage_kv = float(row["Voltage_kV"])
+        parallel_count = int(row["Parallel_Count"])
+        label_lines = [str(row["Name"]), element_type]
+        if element_type == "Transformer":
+            label_lines.append(f"{float(row['HV_kV']):.1f}/{float(row['LV_kV']):.1f} kV")
+        elif voltage_kv > 0:
+            label_lines.append(f"{voltage_kv:.1f} kV")
+        if parallel_count > 1:
+            label_lines.append(f"x{parallel_count} parallel")
+
+        shape = "box"
+        fillcolor = "#F7F9FC"
+        if element_type == "Source":
+            shape = "ellipse"
+            fillcolor = "#E8F3FF"
+        elif element_type == "Busbar":
+            shape = "component"
+            fillcolor = "#FFF4D6"
+        elif element_type == "Transformer":
+            shape = "hexagon"
+            fillcolor = "#E8F7E8"
+
+        lines.append(
+            f'{node_id} [label="{"\\n".join(label_lines)}", shape={shape}, fillcolor="{fillcolor}"];'
+        )
+        if previous_node_id is not None:
+            lines.append(f"{previous_node_id} -> {node_id};")
+        previous_node_id = node_id
+
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def calculate_line_builder_network(network_elements_df: pd.DataFrame) -> dict:
+    network_df = sanitize_network_elements(network_elements_df)
+
+    if network_df.empty:
+        return {
+            "network_df": network_df,
+            "cable_df": pd.DataFrame(),
+            "impedance_df": pd.DataFrame(),
+            "fault_df": pd.DataFrame(),
+            "diagram_dot": build_single_line_diagram_dot(default_network_elements_df()),
+            "warnings": ["Add at least one source and one busbar in the line builder to calculate fault levels."],
+            "max_fault_current_ka": 0.0,
+        }
+
+    current_base_kv: float | None = None
+    cumulative_z1 = complex(0.0, 0.0)
+    cumulative_z2 = complex(0.0, 0.0)
+    cumulative_z0 = complex(0.0, 0.0)
+
+    cable_rows: list[dict] = []
+    impedance_rows: list[dict] = []
+    fault_rows: list[dict] = []
+    warnings: list[str] = []
+
+    for _, row in network_df.iterrows():
+        name = str(row["Name"])
+        element_type = str(row["Element_Type"])
+        data_mode = str(row["Data_Mode"])
+        voltage_kv = float(row["Voltage_kV"])
+        parallel_count = max(int(row["Parallel_Count"]), 1)
+
+        element_z1 = complex(0.0, 0.0)
+        element_z2 = complex(0.0, 0.0)
+        element_z0 = complex(0.0, 0.0)
+        effective_voltage_kv = current_base_kv if current_base_kv is not None else voltage_kv
+
+        if element_type == "Source":
+            if data_mode == "Common Data":
+                if voltage_kv <= 0 or float(row["Source_SC_MVA"]) <= 0:
+                    warnings.append(f"Source '{name}' needs voltage and fault level input.")
+                source_z = split_rx_from_z_magnitude((voltage_kv**2) / max(float(row["Source_SC_MVA"]), 1e-9), float(row["XR"]))
+                element_z1, element_z2, element_z0 = (
+                    source_z,
+                    source_z,
+                    source_z * SOURCE_Z0_FACTOR,
+                )
+            else:
+                element_z1, element_z2, element_z0 = direct_sequence_impedance_from_row(
+                    row,
+                    z0_multiplier_fallback=SOURCE_Z0_FACTOR,
+                    default_z0_to_z1=True,
+                )
+
+            current_base_kv = voltage_kv if voltage_kv > 0 else current_base_kv
+            effective_voltage_kv = current_base_kv if current_base_kv is not None else voltage_kv
+            cumulative_z1 += element_z1 / parallel_count
+            cumulative_z2 += element_z2 / parallel_count
+            cumulative_z0 += element_z0 / parallel_count
+
+        elif element_type == "Busbar":
+            if current_base_kv is None and voltage_kv > 0:
+                current_base_kv = voltage_kv
+            elif current_base_kv is not None and voltage_kv > 0 and not math.isclose(current_base_kv, voltage_kv):
+                cumulative_z1 = refer_impedance_to_voltage(cumulative_z1, current_base_kv, voltage_kv)
+                cumulative_z2 = refer_impedance_to_voltage(cumulative_z2, current_base_kv, voltage_kv)
+                cumulative_z0 = refer_impedance_to_voltage(cumulative_z0, current_base_kv, voltage_kv)
+                current_base_kv = voltage_kv
+
+            bus_voltage_kv = current_base_kv if current_base_kv is not None else voltage_kv
+            effective_voltage_kv = bus_voltage_kv
+            if bus_voltage_kv > 0:
+                fault_result = calc_fault_values(bus_voltage_kv, cumulative_z1, cumulative_z2, cumulative_z0)
+                fault_rows.append(
+                    {
+                        "Bus": name,
+                        "Z1_total_ohm": fault_result["Z1_total_ohm"],
+                        "Z2_total_ohm": fault_result["Z2_total_ohm"],
+                        "Z0_total_ohm": fault_result["Z0_total_ohm"],
+                        "I_3ph_kA": fault_result["I_3ph_kA"],
+                        "I_LL_kA": fault_result["I_LL_kA"],
+                        "I_LG_kA": fault_result["I_LG_kA"],
+                        "Fault_MVA": fault_result["Fault_MVA"],
+                    }
+                )
+            else:
+                warnings.append(f"Busbar '{name}' needs a valid voltage input.")
+
+        elif element_type == "Transformer":
+            hv_kv = float(row["HV_kV"]) if float(row["HV_kV"]) > 0 else current_base_kv or voltage_kv
+            lv_kv = float(row["LV_kV"]) if float(row["LV_kV"]) > 0 else voltage_kv or hv_kv
+
+            if current_base_kv is None:
+                current_base_kv = hv_kv
+            elif hv_kv > 0 and not math.isclose(current_base_kv, hv_kv):
+                cumulative_z1 = refer_impedance_to_voltage(cumulative_z1, current_base_kv, hv_kv)
+                cumulative_z2 = refer_impedance_to_voltage(cumulative_z2, current_base_kv, hv_kv)
+                cumulative_z0 = refer_impedance_to_voltage(cumulative_z0, current_base_kv, hv_kv)
+                current_base_kv = hv_kv
+
+            if data_mode == "Common Data":
+                transformer_z_lv = split_rx_from_z_magnitude(
+                    (float(row["Z_pct"]) / 100.0) * ((lv_kv**2) / max(float(row["Rating_MVA"]), 1e-9)),
+                    float(row["XR"]),
+                )
+                element_z1, element_z2, element_z0 = (
+                    transformer_z_lv,
+                    transformer_z_lv,
+                    transformer_z_lv * TRANSFORMER_Z0_FACTOR,
+                )
+            else:
+                element_z1, element_z2, element_z0 = direct_sequence_impedance_from_row(
+                    row,
+                    z0_multiplier_fallback=TRANSFORMER_Z0_FACTOR,
+                    default_z0_to_z1=True,
+                )
+
+            cumulative_z1 = refer_impedance_to_voltage(cumulative_z1, current_base_kv, lv_kv)
+            cumulative_z2 = refer_impedance_to_voltage(cumulative_z2, current_base_kv, lv_kv)
+            cumulative_z0 = refer_impedance_to_voltage(cumulative_z0, current_base_kv, lv_kv)
+            current_base_kv = lv_kv
+            effective_voltage_kv = lv_kv
+
+            cumulative_z1 += element_z1 / parallel_count
+            cumulative_z2 += element_z2 / parallel_count
+            cumulative_z0 += element_z0 / parallel_count
+
+        else:
+            if current_base_kv is None:
+                current_base_kv = voltage_kv
+            elif voltage_kv > 0 and not math.isclose(current_base_kv, voltage_kv):
+                cumulative_z1 = refer_impedance_to_voltage(cumulative_z1, current_base_kv, voltage_kv)
+                cumulative_z2 = refer_impedance_to_voltage(cumulative_z2, current_base_kv, voltage_kv)
+                cumulative_z0 = refer_impedance_to_voltage(cumulative_z0, current_base_kv, voltage_kv)
+                current_base_kv = voltage_kv
+
+            effective_voltage_kv = current_base_kv if current_base_kv is not None else voltage_kv
+
+            if element_type == "Reactor" and data_mode == "Common Data":
+                element_z1 = complex(0.0, float(row["Reactance_Ohm"]))
+                element_z2 = element_z1
+                element_z0 = element_z1
+            elif element_type == "Cable" and data_mode == "Common Data":
+                cable_data = cable_sequence_impedance_per_km(str(row["Cable_Type"]))
+                element_z1 = float(row["Length_km"]) * cable_data["z1"]
+                element_z2 = float(row["Length_km"]) * cable_data["z2"]
+                element_z0 = float(row["Length_km"]) * cable_data["z0"]
+                cable_rows.append(
+                    {
+                        "Element": name,
+                        "Voltage_kV": effective_voltage_kv,
+                        "Cable_Type": str(row["Cable_Type"]),
+                        "Parallel_Count": parallel_count,
+                        "Per_Cable_Z1": format_complex_ohm(element_z1),
+                        "Per_Cable_Z2": format_complex_ohm(element_z2),
+                        "Per_Cable_Z0": format_complex_ohm(element_z0),
+                        "Equivalent_Z1": format_complex_ohm(element_z1 / parallel_count),
+                        "Equivalent_Z2": format_complex_ohm(element_z2 / parallel_count),
+                        "Equivalent_Z0": format_complex_ohm(element_z0 / parallel_count),
+                    }
+                )
+            else:
+                z0_default_to_z1 = element_type != "Source"
+                element_z1, element_z2, element_z0 = direct_sequence_impedance_from_row(
+                    row,
+                    z0_multiplier_fallback=1.0,
+                    default_z0_to_z1=z0_default_to_z1,
+                )
+
+            cumulative_z1 += element_z1 / parallel_count
+            cumulative_z2 += element_z2 / parallel_count
+            cumulative_z0 += element_z0 / parallel_count
+
+        impedance_rows.append(
+            {
+                "Order": int(row["Order"]),
+                "Name": name,
+                "Type": element_type,
+                "Voltage_kV": effective_voltage_kv,
+                "Parallel_Count": parallel_count,
+                "Element_Z1": format_complex_ohm(element_z1 / parallel_count if parallel_count > 0 else element_z1),
+                "Element_Z2": format_complex_ohm(element_z2 / parallel_count if parallel_count > 0 else element_z2),
+                "Element_Z0": format_complex_ohm(element_z0 / parallel_count if parallel_count > 0 else element_z0),
+                "Running_Z1": format_complex_ohm(cumulative_z1),
+                "Running_Z2": format_complex_ohm(cumulative_z2),
+                "Running_Z0": format_complex_ohm(cumulative_z0),
+                "|Running_Z1|": abs(cumulative_z1),
+                "|Running_Z2|": abs(cumulative_z2),
+                "|Running_Z0|": abs(cumulative_z0),
+            }
+        )
+
+    fault_df = pd.DataFrame(fault_rows)
+    return {
+        "network_df": network_df,
+        "cable_df": pd.DataFrame(cable_rows),
+        "impedance_df": pd.DataFrame(impedance_rows),
+        "fault_df": fault_df,
+        "diagram_dot": build_single_line_diagram_dot(network_df),
+        "warnings": warnings,
+        "max_fault_current_ka": float(fault_df["I_3ph_kA"].max()) if not fault_df.empty else 0.0,
+    }
 
 
 def parse_bool_like(raw_value: object) -> bool:
@@ -421,9 +1282,16 @@ def persist_last_entered_state() -> None:
     if relay_df.empty:
         relay_df = default_relay_settings_df()
 
+    network_elements_df = sanitize_network_elements(
+        pd.DataFrame(st.session_state.get("network_elements", pd.DataFrame()))
+    )
+    if network_elements_df.empty:
+        network_elements_df = default_network_elements_df()
+
     payload = {
         "study_case": study_case_data,
         "relay_settings": relay_df[RELAY_EXPORT_COLUMNS].to_dict(orient="records"),
+        "network_elements": network_elements_df[NETWORK_ELEMENT_COLUMNS].to_dict(orient="records"),
     }
 
     try:
@@ -461,16 +1329,26 @@ def initialize_app_state() -> None:
             sanitized_df = default_relay_settings_df()
         st.session_state.relay_settings = sanitized_df[RELAY_EXPORT_COLUMNS]
 
+    if "network_elements" not in st.session_state:
+        network_rows = persisted_state.get("network_elements", DEFAULT_NETWORK_ELEMENTS)
+        network_df = pd.DataFrame(network_rows)
+        sanitized_network_df = sanitize_network_elements(network_df)
+        if sanitized_network_df.empty:
+            sanitized_network_df = default_network_elements_df()
+        st.session_state.network_elements = sanitized_network_df[NETWORK_ELEMENT_COLUMNS]
+
 
 def load_network_preset() -> None:
     for key, value in DEFAULT_NETWORK_PRESET.items():
         st.session_state[key] = value
+    st.session_state.network_elements = default_network_elements_df()
 
 
 def restore_original_defaults() -> None:
     load_network_preset()
     st.session_state.relay_settings = default_relay_settings_df()
     st.session_state.pop("relay_settings_editor", None)
+    st.session_state.pop("network_elements_editor", None)
 
 
 def serialize_study_case_csv() -> bytes:
@@ -599,6 +1477,12 @@ def parse_relay_settings_csv(upload_bytes: bytes) -> Tuple[Optional[pd.DataFrame
     return sanitized_df, f"Loaded {len(sanitized_df)} relay settings rows from CSV."
 
 
+def initialize_commissioning_widget_state() -> None:
+    for key, value in COMMISSIONING_WIDGET_DEFAULTS.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
 st.set_page_config(
     page_title=f"Protection {APP_REVISION}",
     page_icon="🛡️",
@@ -607,10 +1491,11 @@ st.set_page_config(
 )
 
 initialize_app_state()
+initialize_commissioning_widget_state()
 
 st.title("🛡️ Protection")
 st.caption(
-    f"{APP_REVISION} · ETAP-style protection study MVP: network parameters, fault levels, protection grading, and arc-flash screening."
+    f"{APP_REVISION} · ETAP-style protection study MVP: network parameters, fault levels, protection grading, commissioning worksheets, and arc-flash screening."
 )
 
 with st.sidebar:
@@ -663,240 +1548,329 @@ with st.sidebar:
 
     st.caption(f"Active study: {project_name}")
 
-network_tab, fault_tab, protection_tab, arc_tab, full_arc_tab, formula_tab = st.tabs(
+network_tab, fault_tab, protection_tab, arc_tab, full_arc_tab, oc_ef_commissioning_tab, sel787_tab, translay_tab, formula_tab = st.tabs(
     [
         "1) Network Inputs",
         "2) Fault Levels",
         "3) Protection & Grading",
         "4) Arc-Flash Estimate",
         "5) Full Arc-Flash Calc",
-        "6) Formula Reference",
+        "6) OC/EF Commissioning",
+        "7) SEL-787 Differential",
+        "8) Translay Commissioning",
+        "9) Formula Reference",
     ]
 )
 
+frequency_hz = st.session_state.get("frequency_hz", 50)
+source_v_kv = float(st.session_state.get("source_v_kv", DEFAULT_NETWORK_PRESET["source_v_kv"]))
+transformer_hv_kv = float(
+    st.session_state.get("transformer_hv_kv", DEFAULT_NETWORK_PRESET["transformer_hv_kv"])
+)
+transformer_lv_kv = float(
+    st.session_state.get("transformer_lv_kv", DEFAULT_NETWORK_PRESET["transformer_lv_kv"])
+)
+max_fault_current_ka = 0.0
+
 with network_tab:
     st.subheader("Power Network Parameters")
-    st.caption("All impedances are converted to the selected study voltage base before fault calculations.")
-    st.markdown("#### One-line arrangement (default template)")
-    st.caption(" → ".join(NETWORK_ARRANGEMENT))
-    st.info(
-        "Legacy cable sequence data uses best-available typical values for old assets. "
-        "Where detailed test data is unavailable, Z2 is taken equal to Z1 and typical Z0 values are used."
+    network_input_mode = st.radio(
+        "Network input mode",
+        options=NETWORK_INPUT_MODE_OPTIONS,
+        key="network_input_mode",
+        horizontal=True,
     )
-    if st.session_state.get("duplicate_source_to_first_busbar_circuit", False):
+
+    if network_input_mode == "Template Inputs":
+        st.caption("All impedances are converted to the selected study voltage base before fault calculations.")
+        st.markdown("#### One-line arrangement (default template)")
+        st.caption(" → ".join(NETWORK_ARRANGEMENT))
+        st.info(
+            "Legacy cable sequence data uses best-available typical values for old assets. "
+            "Where detailed test data is unavailable, Z2 is taken equal to Z1 and typical Z0 values are used."
+        )
+        if st.session_state.get("duplicate_source_to_first_busbar_circuit", False):
+            st.caption(
+                "Optional duplicate circuit enabled: reactor, 33kV cable, transformer, and 11kV transformer cable "
+                "are modeled as two identical circuits in parallel from the 33kV source bus to the first 11kV busbar. "
+                "The upstream source equivalent remains common."
+            )
+        if st.session_state.get("parallel_lv_transformer_cable", False):
+            st.caption(
+                "11kV transformer cable is modeled as two cables in parallel (impedance halved for this segment)."
+            )
+        if st.session_state.get("parallel_feeder_cable", False):
+            st.caption(
+                "11kV feeder cable is modeled as two cables in parallel (impedance halved for this segment)."
+            )
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown("**33kV Source Side**")
+            source_v_kv = st.number_input(
+                "Source nominal voltage (kV)",
+                min_value=1.0,
+                max_value=400.0,
+                step=0.1,
+                key="source_v_kv",
+            )
+            source_sc_mva = st.number_input(
+                "Upstream source short-circuit level (MVA)",
+                min_value=10.0,
+                max_value=50000.0,
+                step=10.0,
+                key="source_sc_mva",
+            )
+            source_xr = st.number_input(
+                "Source X/R ratio",
+                min_value=0.0,
+                max_value=50.0,
+                step=0.5,
+                key="source_xr",
+            )
+            reactor_ohm = st.number_input(
+                "33kV reactor reactance (Ω)",
+                min_value=0.0,
+                max_value=50.0,
+                step=0.01,
+                key="reactor_ohm",
+            )
+            hv_cable_length_km = st.number_input(
+                "33kV cable length (km)",
+                min_value=0.0,
+                max_value=100.0,
+                step=0.1,
+                key="hv_cable_length_km",
+            )
+            hv_cable_type = st.selectbox(
+                "33kV cable type",
+                options=HV_CABLE_OPTIONS,
+                key="hv_cable_type",
+            )
+
+        with col2:
+            st.markdown("**Transformer & 11kV Link**")
+            transformer_hv_kv = st.number_input(
+                "Transformer HV voltage (kV)",
+                min_value=1.0,
+                max_value=400.0,
+                step=0.1,
+                key="transformer_hv_kv",
+            )
+            transformer_lv_kv = st.number_input(
+                "Transformer LV voltage (kV)",
+                min_value=0.4,
+                max_value=66.0,
+                step=0.1,
+                key="transformer_lv_kv",
+            )
+            transformer_mva = st.number_input(
+                "Transformer rating (MVA)",
+                min_value=0.1,
+                max_value=1000.0,
+                step=0.1,
+                key="transformer_mva",
+            )
+            transformer_z_pct = st.number_input(
+                "Transformer impedance (%Z)",
+                min_value=1.0,
+                max_value=25.0,
+                step=0.1,
+                key="transformer_z_pct",
+            )
+            transformer_xr = st.number_input(
+                "Transformer X/R ratio",
+                min_value=0.0,
+                max_value=50.0,
+                step=0.5,
+                key="transformer_xr",
+            )
+            lv_cable_length_km = st.number_input(
+                "11kV cable length from transformer (km)",
+                min_value=0.0,
+                max_value=20.0,
+                step=0.01,
+                key="lv_cable_length_km",
+            )
+            lv_cable_type = st.selectbox(
+                "11kV transformer cable type",
+                options=LV_CABLE_OPTIONS,
+                key="lv_cable_type",
+            )
+            parallel_lv_transformer_cable = st.checkbox(
+                "Parallel 11kV transformer cable (2 in parallel)",
+                key="parallel_lv_transformer_cable",
+            )
+            duplicate_source_to_first_busbar_circuit = st.checkbox(
+                "Duplicate source-to-1st-11kV-busbar circuit in parallel",
+                key="duplicate_source_to_first_busbar_circuit",
+            )
+
+        with col3:
+            st.markdown("**11kV Study Side**")
+            v_ll_kv = st.number_input(
+                "Study bus nominal voltage (kV)",
+                min_value=0.4,
+                max_value=66.0,
+                step=0.1,
+                key="v_ll_kv",
+            )
+            frequency_hz = st.selectbox("Frequency (Hz)", options=[50, 60], key="frequency_hz")
+            feeder_length_km = st.number_input(
+                "Feeder length (km)",
+                min_value=0.0,
+                max_value=100.0,
+                step=0.1,
+                key="feeder_length_km",
+            )
+            feeder_cable_type = st.selectbox(
+                "11kV feeder cable type",
+                options=LV_CABLE_OPTIONS,
+                key="feeder_cable_type",
+            )
+            parallel_feeder_cable = st.checkbox(
+                "Parallel 11kV feeder cable (2 in parallel)",
+                key="parallel_feeder_cable",
+            )
+    else:
         st.caption(
-            "Optional duplicate circuit enabled: reactor, 33kV cable, transformer, and 11kV transformer cable "
-            "are modeled as two identical circuits in parallel from the 33kV source bus to the first 11kV busbar. "
-            "The upstream source equivalent remains common."
+            "Enter one network element per row. Busbar rows become fault locations. "
+            "Use common data for typical source/cable/reactor/transformer inputs, or direct sequence impedance where available."
         )
-    if st.session_state.get("parallel_lv_transformer_cable", False):
-        st.caption(
-            "11kV transformer cable is modeled as two cables in parallel (impedance halved for this segment)."
+        st.info(
+            "Parallel circuits are modeled with `Parallel_Count`. Each row also carries its own voltage input so the builder can step across voltage levels line by line."
         )
-    if st.session_state.get("parallel_feeder_cable", False):
-        st.caption(
-            "11kV feeder cable is modeled as two cables in parallel (impedance halved for this segment)."
-        )
+        builder_col1, builder_col2 = st.columns([5, 1])
+        with builder_col2:
+            frequency_hz = st.selectbox("Frequency (Hz)", options=[50, 60], key="frequency_hz")
 
-    col1, col2, col3 = st.columns(3)
+        network_elements_editor_df = pd.DataFrame(st.session_state.network_elements).reset_index(drop=True)
+        if network_elements_editor_df.empty:
+            network_elements_editor_df = default_network_elements_df()
+        else:
+            for column_name in NETWORK_ELEMENT_COLUMNS:
+                if column_name not in network_elements_editor_df.columns:
+                    if column_name in {"Name", "Element_Type", "Data_Mode", "Cable_Type"}:
+                        network_elements_editor_df[column_name] = ""
+                    else:
+                        network_elements_editor_df[column_name] = 0.0
+            network_elements_editor_df = network_elements_editor_df[NETWORK_ELEMENT_COLUMNS]
 
-    with col1:
-        st.markdown("**33kV Source Side**")
-        source_v_kv = st.number_input(
-            "Source nominal voltage (kV)",
-            min_value=1.0,
-            max_value=400.0,
-            step=0.1,
-            key="source_v_kv",
+        edited_network_elements_df = st.data_editor(
+            network_elements_editor_df,
+            num_rows="dynamic",
+            key="network_elements_editor",
+            use_container_width=True,
+            height=380,
+            column_config={
+                "Order": st.column_config.NumberColumn("Order", min_value=1, step=1),
+                "Name": st.column_config.TextColumn("Name"),
+                "Element_Type": st.column_config.SelectboxColumn(
+                    "Type", options=NETWORK_ELEMENT_TYPE_OPTIONS
+                ),
+                "Data_Mode": st.column_config.SelectboxColumn(
+                    "Data mode", options=NETWORK_ELEMENT_DATA_MODE_OPTIONS
+                ),
+                "Voltage_kV": st.column_config.NumberColumn("Voltage (kV)", min_value=0.0),
+                "Parallel_Count": st.column_config.NumberColumn("Parallel", min_value=1, step=1),
+                "Source_SC_MVA": st.column_config.NumberColumn("Source SC (MVA)", min_value=0.0),
+                "XR": st.column_config.NumberColumn("X/R", min_value=0.0),
+                "Reactance_Ohm": st.column_config.NumberColumn("Reactor X (Ω)", min_value=0.0),
+                "Length_km": st.column_config.NumberColumn("Length (km)", min_value=0.0),
+                "Cable_Type": st.column_config.SelectboxColumn(
+                    "Cable type", options=sorted(set(HV_CABLE_OPTIONS) | set(LV_CABLE_OPTIONS))
+                ),
+                "HV_kV": st.column_config.NumberColumn("HV (kV)", min_value=0.0),
+                "LV_kV": st.column_config.NumberColumn("LV (kV)", min_value=0.0),
+                "Rating_MVA": st.column_config.NumberColumn("Rating (MVA)", min_value=0.0),
+                "Z_pct": st.column_config.NumberColumn("%Z", min_value=0.0),
+                "R1_ohm": st.column_config.NumberColumn("R1 (Ω)", min_value=0.0),
+                "X1_ohm": st.column_config.NumberColumn("X1 (Ω)", min_value=0.0),
+                "R0_ohm": st.column_config.NumberColumn("R0 (Ω)", min_value=0.0),
+                "X0_ohm": st.column_config.NumberColumn("X0 (Ω)", min_value=0.0),
+            },
         )
-        source_sc_mva = st.number_input(
-            "Upstream source short-circuit level (MVA)",
-            min_value=10.0,
-            max_value=50000.0,
-            step=10.0,
-            key="source_sc_mva",
-        )
-        source_xr = st.number_input(
-            "Source X/R ratio",
-            min_value=0.0,
-            max_value=50.0,
-            step=0.5,
-            key="source_xr",
-        )
-        reactor_ohm = st.number_input(
-            "33kV reactor reactance (Ω)",
-            min_value=0.0,
-            max_value=50.0,
-            step=0.01,
-            key="reactor_ohm",
-        )
-        hv_cable_length_km = st.number_input(
-            "33kV cable length (km)",
-            min_value=0.0,
-            max_value=100.0,
-            step=0.1,
-            key="hv_cable_length_km",
-        )
-        hv_cable_type = st.selectbox(
-            "33kV cable type",
-            options=HV_CABLE_OPTIONS,
-            key="hv_cable_type",
-        )
+        st.session_state.network_elements = pd.DataFrame(edited_network_elements_df).reset_index(drop=True)
 
-    with col2:
-        st.markdown("**Transformer & 11kV Link**")
-        transformer_hv_kv = st.number_input(
-            "Transformer HV voltage (kV)",
-            min_value=1.0,
-            max_value=400.0,
-            step=0.1,
-            key="transformer_hv_kv",
-        )
-        transformer_lv_kv = st.number_input(
-            "Transformer LV voltage (kV)",
-            min_value=0.4,
-            max_value=66.0,
-            step=0.1,
-            key="transformer_lv_kv",
-        )
-        transformer_mva = st.number_input(
-            "Transformer rating (MVA)",
-            min_value=0.1,
-            max_value=1000.0,
-            step=0.1,
-            key="transformer_mva",
-        )
-        transformer_z_pct = st.number_input(
-            "Transformer impedance (%Z)",
-            min_value=1.0,
-            max_value=25.0,
-            step=0.1,
-            key="transformer_z_pct",
-        )
-        transformer_xr = st.number_input(
-            "Transformer X/R ratio",
-            min_value=0.0,
-            max_value=50.0,
-            step=0.5,
-            key="transformer_xr",
-        )
-        lv_cable_length_km = st.number_input(
-            "11kV cable length from transformer (km)",
-            min_value=0.0,
-            max_value=20.0,
-            step=0.01,
-            key="lv_cable_length_km",
-        )
-        lv_cable_type = st.selectbox(
-            "11kV transformer cable type",
-            options=LV_CABLE_OPTIONS,
-            key="lv_cable_type",
-        )
-        parallel_lv_transformer_cable = st.checkbox(
-            "Parallel 11kV transformer cable (2 in parallel)",
-            key="parallel_lv_transformer_cable",
-        )
-        duplicate_source_to_first_busbar_circuit = st.checkbox(
-            "Duplicate source-to-1st-11kV-busbar circuit in parallel",
-            key="duplicate_source_to_first_busbar_circuit",
-        )
-
-    with col3:
-        st.markdown("**11kV Study Side**")
-        v_ll_kv = st.number_input(
-            "Study bus nominal voltage (kV)",
-            min_value=0.4,
-            max_value=66.0,
-            step=0.1,
-            key="v_ll_kv",
-        )
-        frequency_hz = st.selectbox("Frequency (Hz)", options=[50, 60], key="frequency_hz")
-        feeder_length_km = st.number_input(
-            "Feeder length (km)",
-            min_value=0.0,
-            max_value=100.0,
-            step=0.1,
-            key="feeder_length_km",
-        )
-        feeder_cable_type = st.selectbox(
-            "11kV feeder cable type",
-            options=LV_CABLE_OPTIONS,
-            key="feeder_cable_type",
-        )
-        parallel_feeder_cable = st.checkbox(
-            "Parallel 11kV feeder cable (2 in parallel)",
-            key="parallel_feeder_cable",
-        )
-
-if st.session_state.get("study_bus") not in STUDY_CASE_OPTION_VALUES["study_bus"]:
-    st.session_state["study_bus"] = "11kV Transformer Busbar"
-
-source_z_hv = split_rx_from_z_magnitude((source_v_kv**2) / source_sc_mva, source_xr)
-source_to_study_factor = (v_ll_kv / source_v_kv) ** 2 if source_v_kv > 0 else 0.0
-source_z1 = source_z_hv * source_to_study_factor
-source_z2 = source_z1
-source_z0 = source_z1 * SOURCE_Z0_FACTOR
-
-reactor_z1 = complex(0.0, reactor_ohm) * source_to_study_factor
-reactor_z2 = reactor_z1
-reactor_z0 = reactor_z1
-
-hv_cable_data = cable_sequence_impedance_per_km(hv_cable_type)
-hv_cable_z1 = hv_cable_length_km * hv_cable_data["z1"] * source_to_study_factor
-hv_cable_z2 = hv_cable_length_km * hv_cable_data["z2"] * source_to_study_factor
-hv_cable_z0 = hv_cable_length_km * hv_cable_data["z0"] * source_to_study_factor
-
-transformer_z_lv = split_rx_from_z_magnitude(
-    (transformer_z_pct / 100) * ((transformer_lv_kv**2) / transformer_mva),
-    transformer_xr,
+cable_library_df = pd.DataFrame(
+    [
+        {
+            "Cable Type": cable_type,
+            "Z1": format_complex_ohm(cable_data["z1"]),
+            "Z2": format_complex_ohm(cable_data["z2"]),
+            "Z0": format_complex_ohm(cable_data["z0"]),
+            "Data basis": cable_data["note"],
+        }
+        for cable_type, cable_data in CABLE_SEQUENCE_LIBRARY.items()
+    ]
 )
-lv_to_study_factor = (v_ll_kv / transformer_lv_kv) ** 2 if transformer_lv_kv > 0 else 0.0
-transformer_z1 = transformer_z_lv * lv_to_study_factor
-transformer_z2 = transformer_z1
-transformer_z0 = transformer_z1 * TRANSFORMER_Z0_FACTOR
 
-lv_cable_data = cable_sequence_impedance_per_km(lv_cable_type)
-lv_cable_z1 = lv_cable_length_km * lv_cable_data["z1"] * lv_to_study_factor
-lv_cable_z2 = lv_cable_length_km * lv_cable_data["z2"] * lv_to_study_factor
-lv_cable_z0 = lv_cable_length_km * lv_cable_data["z0"] * lv_to_study_factor
+if network_input_mode == "Template Inputs":
+    source_z_hv = split_rx_from_z_magnitude((source_v_kv**2) / source_sc_mva, source_xr)
+    source_to_study_factor = (v_ll_kv / source_v_kv) ** 2 if source_v_kv > 0 else 0.0
+    source_z1 = source_z_hv * source_to_study_factor
+    source_z2 = source_z1
+    source_z0 = source_z1 * SOURCE_Z0_FACTOR
 
-lv_transformer_cable_count = 2 if parallel_lv_transformer_cable else 1
-lv_cable_equiv_z1 = lv_cable_z1 / lv_transformer_cable_count
-lv_cable_equiv_z2 = lv_cable_z2 / lv_transformer_cable_count
-lv_cable_equiv_z0 = lv_cable_z0 / lv_transformer_cable_count
+    reactor_z1 = complex(0.0, reactor_ohm) * source_to_study_factor
+    reactor_z2 = reactor_z1
+    reactor_z0 = reactor_z1
 
-single_source_to_first_busbar_circuit_z1 = reactor_z1 + hv_cable_z1 + transformer_z1 + lv_cable_equiv_z1
-single_source_to_first_busbar_circuit_z2 = reactor_z2 + hv_cable_z2 + transformer_z2 + lv_cable_equiv_z2
-single_source_to_first_busbar_circuit_z0 = reactor_z0 + hv_cable_z0 + transformer_z0 + lv_cable_equiv_z0
+    hv_cable_data = cable_sequence_impedance_per_km(hv_cable_type)
+    hv_cable_z1 = hv_cable_length_km * hv_cable_data["z1"] * source_to_study_factor
+    hv_cable_z2 = hv_cable_length_km * hv_cable_data["z2"] * source_to_study_factor
+    hv_cable_z0 = hv_cable_length_km * hv_cable_data["z0"] * source_to_study_factor
 
-parallel_circuit_count = 2 if duplicate_source_to_first_busbar_circuit else 1
-source_to_first_busbar_equiv_z1 = single_source_to_first_busbar_circuit_z1 / parallel_circuit_count
-source_to_first_busbar_equiv_z2 = single_source_to_first_busbar_circuit_z2 / parallel_circuit_count
-source_to_first_busbar_equiv_z0 = single_source_to_first_busbar_circuit_z0 / parallel_circuit_count
+    transformer_z_lv = split_rx_from_z_magnitude(
+        (transformer_z_pct / 100) * ((transformer_lv_kv**2) / transformer_mva),
+        transformer_xr,
+    )
+    lv_to_study_factor = (v_ll_kv / transformer_lv_kv) ** 2 if transformer_lv_kv > 0 else 0.0
+    transformer_z1 = transformer_z_lv * lv_to_study_factor
+    transformer_z2 = transformer_z1
+    transformer_z0 = transformer_z1 * TRANSFORMER_Z0_FACTOR
 
-feeder_cable_data = cable_sequence_impedance_per_km(feeder_cable_type)
-feeder_z1 = feeder_length_km * feeder_cable_data["z1"]
-feeder_z2 = feeder_length_km * feeder_cable_data["z2"]
-feeder_z0 = feeder_length_km * feeder_cable_data["z0"]
+    lv_cable_data = cable_sequence_impedance_per_km(lv_cable_type)
+    lv_cable_z1 = lv_cable_length_km * lv_cable_data["z1"] * lv_to_study_factor
+    lv_cable_z2 = lv_cable_length_km * lv_cable_data["z2"] * lv_to_study_factor
+    lv_cable_z0 = lv_cable_length_km * lv_cable_data["z0"] * lv_to_study_factor
 
-feeder_cable_count = 2 if parallel_feeder_cable else 1
-feeder_equiv_z1 = feeder_z1 / feeder_cable_count
-feeder_equiv_z2 = feeder_z2 / feeder_cable_count
-feeder_equiv_z0 = feeder_z0 / feeder_cable_count
+    lv_transformer_cable_count = 2 if parallel_lv_transformer_cable else 1
+    lv_cable_equiv_z1 = lv_cable_z1 / lv_transformer_cable_count
+    lv_cable_equiv_z2 = lv_cable_z2 / lv_transformer_cable_count
+    lv_cable_equiv_z0 = lv_cable_z0 / lv_transformer_cable_count
 
-z1_incomer = source_z1 + source_to_first_busbar_equiv_z1
-z2_incomer = source_z2 + source_to_first_busbar_equiv_z2
-z0_incomer = source_z0 + source_to_first_busbar_equiv_z0
+    single_source_to_first_busbar_circuit_z1 = reactor_z1 + hv_cable_z1 + transformer_z1 + lv_cable_equiv_z1
+    single_source_to_first_busbar_circuit_z2 = reactor_z2 + hv_cable_z2 + transformer_z2 + lv_cable_equiv_z2
+    single_source_to_first_busbar_circuit_z0 = reactor_z0 + hv_cable_z0 + transformer_z0 + lv_cable_equiv_z0
 
-z1_load = z1_incomer + feeder_equiv_z1
-z2_load = z2_incomer + feeder_equiv_z2
-z0_load = z0_incomer + feeder_equiv_z0
+    parallel_circuit_count = 2 if duplicate_source_to_first_busbar_circuit else 1
+    source_to_first_busbar_equiv_z1 = single_source_to_first_busbar_circuit_z1 / parallel_circuit_count
+    source_to_first_busbar_equiv_z2 = single_source_to_first_busbar_circuit_z2 / parallel_circuit_count
+    source_to_first_busbar_equiv_z0 = single_source_to_first_busbar_circuit_z0 / parallel_circuit_count
 
-incomer_fault = calc_fault_values(v_ll_kv, z1_incomer, z2_incomer, z0_incomer)
-load_fault = calc_fault_values(v_ll_kv, z1_load, z2_load, z0_load)
+    feeder_cable_data = cable_sequence_impedance_per_km(feeder_cable_type)
+    feeder_z1 = feeder_length_km * feeder_cable_data["z1"]
+    feeder_z2 = feeder_length_km * feeder_cable_data["z2"]
+    feeder_z0 = feeder_length_km * feeder_cable_data["z0"]
 
-with network_tab:
-    st.markdown("#### Selected Cable Sequence Data (Ω/km)")
+    feeder_cable_count = 2 if parallel_feeder_cable else 1
+    feeder_equiv_z1 = feeder_z1 / feeder_cable_count
+    feeder_equiv_z2 = feeder_z2 / feeder_cable_count
+    feeder_equiv_z0 = feeder_z0 / feeder_cable_count
+
+    z1_incomer = source_z1 + source_to_first_busbar_equiv_z1
+    z2_incomer = source_z2 + source_to_first_busbar_equiv_z2
+    z0_incomer = source_z0 + source_to_first_busbar_equiv_z0
+
+    z1_load = z1_incomer + feeder_equiv_z1
+    z2_load = z2_incomer + feeder_equiv_z2
+    z0_load = z0_incomer + feeder_equiv_z0
+
+    incomer_fault = calc_fault_values(v_ll_kv, z1_incomer, z2_incomer, z0_incomer)
+    load_fault = calc_fault_values(v_ll_kv, z1_load, z2_load, z0_load)
+
     cable_df = pd.DataFrame(
         [
             {
@@ -922,24 +1896,7 @@ with network_tab:
             },
         ]
     )
-    st.dataframe(cable_df, use_container_width=True)
 
-    st.markdown("#### Cable Library (Best Available Legacy Data, Ω/km)")
-    cable_library_df = pd.DataFrame(
-        [
-            {
-                "Cable Type": cable_type,
-                "Z1": format_complex_ohm(cable_data["z1"]),
-                "Z2": format_complex_ohm(cable_data["z2"]),
-                "Z0": format_complex_ohm(cable_data["z0"]),
-                "Data basis": cable_data["note"],
-            }
-            for cable_type, cable_data in CABLE_SEQUENCE_LIBRARY.items()
-        ]
-    )
-    st.dataframe(cable_library_df, use_container_width=True)
-
-    st.markdown("#### Sequence Impedance Build-Up (Referred to Study Voltage)")
     impedance_rows = [
         {
             "Element": "Source equivalent (referred)",
@@ -1066,66 +2023,137 @@ with network_tab:
         ]
     )
     impedance_df = pd.DataFrame(impedance_rows)
-    st.dataframe(
-        impedance_df.style.format({"|Z1|": "{:.4f}", "|Z2|": "{:.4f}", "|Z0|": "{:.4f}"}),
-        use_container_width=True,
+    fault_df = pd.DataFrame(
+        [
+            {
+                "Bus": "11kV Transformer Busbar",
+                "Z1_total_ohm": incomer_fault["Z1_total_ohm"],
+                "Z2_total_ohm": incomer_fault["Z2_total_ohm"],
+                "Z0_total_ohm": incomer_fault["Z0_total_ohm"],
+                "I_3ph_kA": incomer_fault["I_3ph_kA"],
+                "I_LL_kA": incomer_fault["I_LL_kA"],
+                "I_LG_kA": incomer_fault["I_LG_kA"],
+                "Fault_MVA": incomer_fault["Fault_MVA"],
+            },
+            {
+                "Bus": "11kV Remote Busbar",
+                "Z1_total_ohm": load_fault["Z1_total_ohm"],
+                "Z2_total_ohm": load_fault["Z2_total_ohm"],
+                "Z0_total_ohm": load_fault["Z0_total_ohm"],
+                "I_3ph_kA": load_fault["I_3ph_kA"],
+                "I_LL_kA": load_fault["I_LL_kA"],
+                "I_LG_kA": load_fault["I_LG_kA"],
+                "Fault_MVA": load_fault["Fault_MVA"],
+            },
+        ]
     )
-    st.caption(
-        f"Nominal frequency: {frequency_hz} Hz | Source base: {source_v_kv:.1f} kV | Transformer: {transformer_hv_kv:.1f}/{transformer_lv_kv:.1f} kV"
-    )
-    st.caption(
-        f"Assumed source Z0/Z1 = {SOURCE_Z0_FACTOR:.1f} and transformer Z0/Z1 = {TRANSFORMER_Z0_FACTOR:.1f}."
-    )
+    network_model_warnings = []
+    network_diagram_dot = build_single_line_diagram_dot(default_network_elements_df())
+    max_fault_current_ka = float(fault_df["I_3ph_kA"].max()) if not fault_df.empty else 0.0
+else:
+    builder_results = calculate_line_builder_network(pd.DataFrame(st.session_state.network_elements))
+    cable_df = builder_results["cable_df"]
+    impedance_df = builder_results["impedance_df"]
+    fault_df = builder_results["fault_df"]
+    network_model_warnings = builder_results["warnings"]
+    network_diagram_dot = builder_results["diagram_dot"]
+    max_fault_current_ka = float(builder_results["max_fault_current_ka"])
 
-fault_df = pd.DataFrame(
-    [
-        {
-            "Bus": "11kV Transformer Busbar",
-            "Z1_total_ohm": incomer_fault["Z1_total_ohm"],
-            "Z2_total_ohm": incomer_fault["Z2_total_ohm"],
-            "Z0_total_ohm": incomer_fault["Z0_total_ohm"],
-            "I_3ph_kA": incomer_fault["I_3ph_kA"],
-            "I_LL_kA": incomer_fault["I_LL_kA"],
-            "I_LG_kA": incomer_fault["I_LG_kA"],
-            "Fault_MVA": incomer_fault["Fault_MVA"],
-        },
-        {
-            "Bus": "11kV Remote Busbar",
-            "Z1_total_ohm": load_fault["Z1_total_ohm"],
-            "Z2_total_ohm": load_fault["Z2_total_ohm"],
-            "Z0_total_ohm": load_fault["Z0_total_ohm"],
-            "I_3ph_kA": load_fault["I_3ph_kA"],
-            "I_LL_kA": load_fault["I_LL_kA"],
-            "I_LG_kA": load_fault["I_LG_kA"],
-            "Fault_MVA": load_fault["Fault_MVA"],
-        },
-    ]
-)
+with network_tab:
+    if network_input_mode == "Template Inputs":
+        st.markdown("#### Selected Cable Sequence Data (Ω/km)")
+        st.dataframe(cable_df, use_container_width=True)
+        st.markdown("#### Cable Library (Best Available Legacy Data, Ω/km)")
+        st.dataframe(cable_library_df, use_container_width=True)
+        st.markdown("#### Sequence Impedance Build-Up (Referred to Study Voltage)")
+        st.dataframe(
+            impedance_df.style.format({"|Z1|": "{:.4f}", "|Z2|": "{:.4f}", "|Z0|": "{:.4f}"}),
+            use_container_width=True,
+        )
+        st.caption(
+            f"Nominal frequency: {frequency_hz} Hz | Source base: {source_v_kv:.1f} kV | Transformer: {transformer_hv_kv:.1f}/{transformer_lv_kv:.1f} kV"
+        )
+        st.caption(
+            f"Assumed source Z0/Z1 = {SOURCE_Z0_FACTOR:.1f} and transformer Z0/Z1 = {TRANSFORMER_Z0_FACTOR:.1f}."
+        )
+    else:
+        if network_model_warnings:
+            for warning_message in network_model_warnings:
+                st.warning(warning_message)
+
+        st.markdown("#### Single-Line Diagram")
+        st.graphviz_chart(network_diagram_dot, use_container_width=True)
+
+        st.markdown("#### Builder Row Sequence Data")
+        if cable_df.empty:
+            st.info("No cable rows are currently defined in the line-by-line builder.")
+        else:
+            st.dataframe(cable_df, use_container_width=True)
+
+        st.markdown("#### Cable Library (Best Available Legacy Data, Ω/km)")
+        st.dataframe(cable_library_df, use_container_width=True)
+
+        st.markdown("#### Running Sequence Impedance Build-Up")
+        if impedance_df.empty:
+            st.info("Add network rows to calculate impedance build-up.")
+        else:
+            st.dataframe(
+                impedance_df.style.format(
+                    {
+                        "Voltage_kV": "{:.2f}",
+                        "|Running_Z1|": "{:.4f}",
+                        "|Running_Z2|": "{:.4f}",
+                        "|Running_Z0|": "{:.4f}",
+                    }
+                ),
+                use_container_width=True,
+            )
+
+if not fault_df.empty:
+    available_study_buses = fault_df["Bus"].tolist()
+    if st.session_state.get("study_bus") not in available_study_buses:
+        st.session_state["study_bus"] = available_study_buses[0]
+else:
+    available_study_buses = []
+    st.session_state["study_bus"] = ""
 
 with fault_tab:
     st.subheader("Calculated Fault Levels")
-    st.dataframe(
-        fault_df.style.format(
-            {
-                "Z1_total_ohm": "{:.4f}",
-                "Z2_total_ohm": "{:.4f}",
-                "Z0_total_ohm": "{:.4f}",
-                "I_3ph_kA": "{:.2f}",
-                "I_LL_kA": "{:.2f}",
-                "I_LG_kA": "{:.2f}",
-                "Fault_MVA": "{:.1f}",
-            }
-        ),
-        use_container_width=True,
-    )
+    if fault_df.empty:
+        st.info(
+            "No fault locations are currently available. Add at least one Busbar row in the line-by-line builder or use the template inputs."
+        )
+    else:
+        st.dataframe(
+            fault_df.style.format(
+                {
+                    "Z1_total_ohm": "{:.4f}",
+                    "Z2_total_ohm": "{:.4f}",
+                    "Z0_total_ohm": "{:.4f}",
+                    "I_3ph_kA": "{:.2f}",
+                    "I_LL_kA": "{:.2f}",
+                    "I_LG_kA": "{:.2f}",
+                    "Fault_MVA": "{:.1f}",
+                }
+            ),
+            use_container_width=True,
+        )
 
     study_col1, study_col2 = st.columns(2)
     with study_col1:
-        study_bus = st.selectbox(
-            "Select fault location for protection checks",
-            options=fault_df["Bus"].tolist(),
-            key="study_bus",
-        )
+        if available_study_buses:
+            study_bus = st.selectbox(
+                "Select fault location for protection checks",
+                options=available_study_buses,
+                key="study_bus",
+            )
+        else:
+            study_bus = ""
+            st.text_input(
+                "Select fault location for protection checks",
+                value="No busbars available",
+                disabled=True,
+            )
     with study_col2:
         fault_type = st.selectbox(
             "Select fault type",
@@ -1139,9 +2167,12 @@ fault_column_map = {
     "Line-Ground": "I_LG_kA",
 }
 
-selected_fault_current_ka = float(
-    fault_df.loc[fault_df["Bus"] == study_bus, fault_column_map[fault_type]].iloc[0]
-)
+if available_study_buses:
+    selected_fault_current_ka = float(
+        fault_df.loc[fault_df["Bus"] == study_bus, fault_column_map[fault_type]].iloc[0]
+    )
+else:
+    selected_fault_current_ka = 0.0
 selected_fault_current_a = selected_fault_current_ka * 1000
 
 with fault_tab:
@@ -1220,9 +2251,14 @@ with protection_tab:
     if relay_df.empty:
         st.warning("Add at least one valid protection device setting to run grading checks.")
         relay_results_df = pd.DataFrame()
+    elif max_fault_current_ka <= 0:
+        st.warning(
+            "No fault current results are available yet. Add at least one valid fault location to run grading checks."
+        )
+        relay_results_df = pd.DataFrame()
     else:
         min_pickup = max(float(relay_df["Pickup_A"].min()) * 1.05, 1.0)
-        max_fault_current_a = incomer_fault["I_3ph_kA"] * 1000
+        max_fault_current_a = max_fault_current_ka * 1000
         max_current = max(
             max_fault_current_a * 2.0,
             float(relay_df["Inst_A"].max()) * 1.20,
@@ -1735,11 +2771,748 @@ with full_arc_tab:
 
     st.info(arc_flash_category(float(worst_row["Incident_Energy_cal_cm2"])))
 
+with oc_ef_commissioning_tab:
+    st.subheader("OC / EF Commissioning Worksheet")
+    st.caption(
+        "Record relay settings, calculate expected operating times, and generate three suggested secondary injection points for commissioning."
+    )
+
+    oc_settings_col1, oc_settings_col2, oc_settings_col3 = st.columns(3)
+    with oc_settings_col1:
+        oc_relay_model = st.selectbox(
+            "Relay model",
+            options=OC_EF_RELAY_MODELS,
+            key="oc_ef_relay_model",
+        )
+        oc_element_type = st.selectbox(
+            "Element type",
+            options=["OC", "EF"],
+            key="oc_ef_element_type",
+        )
+        oc_device_name = st.text_input(
+            "Relay / feeder reference",
+            key="oc_ef_device_name",
+        )
+        oc_curve_name = st.selectbox(
+            "Characteristic",
+            options=COMMISSIONING_CURVE_OPTIONS,
+            key="oc_ef_curve_name",
+        )
+
+    with oc_settings_col2:
+        oc_ct_primary_a = st.number_input(
+            "CT primary (A)",
+            min_value=1.0,
+            step=1.0,
+            key="oc_ef_ct_primary_a",
+        )
+        oc_ct_secondary_a = st.selectbox(
+            "CT secondary (A)",
+            options=[1.0, 5.0],
+            key="oc_ef_ct_secondary_a",
+        )
+        oc_pickup_secondary_a = st.number_input(
+            "Pickup setting (A secondary)",
+            min_value=0.05,
+            step=0.05,
+            key="oc_ef_pickup_secondary_a",
+        )
+        oc_tms = st.number_input(
+            "TMS / time dial",
+            min_value=0.01,
+            max_value=2.00,
+            step=0.01,
+            key="oc_ef_tms",
+        )
+
+    with oc_settings_col3:
+        oc_definite_time_s = st.number_input(
+            "Definite time setting (s)",
+            min_value=0.00,
+            max_value=30.00,
+            step=0.01,
+            key="oc_ef_definite_time_s",
+        )
+        oc_inst_pickup_a = st.number_input(
+            "High-set / instantaneous (A secondary)",
+            min_value=0.00,
+            step=0.10,
+            key="oc_ef_inst_pickup_a",
+        )
+        oc_notes = st.text_area(
+            "Commissioning notes",
+            key="oc_ef_notes",
+            height=96,
+        )
+
+    st.info(OC_EF_MODEL_NOTES[oc_relay_model])
+
+    oc_pickup_primary_a = oc_pickup_secondary_a * (oc_ct_primary_a / oc_ct_secondary_a)
+    oc_inst_primary_a = (
+        oc_inst_pickup_a * (oc_ct_primary_a / oc_ct_secondary_a) if oc_inst_pickup_a > 0 else math.nan
+    )
+    oc_settings_df = pd.DataFrame(
+        [
+            {
+                "Relay_Model": oc_relay_model,
+                "Element_Type": oc_element_type,
+                "Device": oc_device_name,
+                "Characteristic": oc_curve_name,
+                "CT_Primary_A": oc_ct_primary_a,
+                "CT_Secondary_A": oc_ct_secondary_a,
+                "Pickup_Secondary_A": oc_pickup_secondary_a,
+                "Pickup_Primary_A": oc_pickup_primary_a,
+                "TMS": oc_tms,
+                "Definite_Time_s": oc_definite_time_s,
+                "High_Set_Secondary_A": oc_inst_pickup_a,
+                "High_Set_Primary_A": oc_inst_primary_a,
+                "Notes": oc_notes,
+            }
+        ]
+    )
+
+    oc_test_points_df = build_oc_ef_test_points(
+        pickup_secondary_a=oc_pickup_secondary_a,
+        curve_name=oc_curve_name,
+        tms=oc_tms,
+        definite_time_s=oc_definite_time_s,
+        inst_pickup_a=oc_inst_pickup_a,
+        ct_primary_a=oc_ct_primary_a,
+        ct_secondary_a=oc_ct_secondary_a,
+    )
+    oc_test_points_df["Expected_Operate_Display"] = oc_test_points_df["Expected_Operate_s"].apply(format_time_value)
+
+    oc_metric_col1, oc_metric_col2, oc_metric_col3 = st.columns(3)
+    with oc_metric_col1:
+        st.metric("Pickup primary", f"{oc_pickup_primary_a:.1f} A")
+    with oc_metric_col2:
+        high_set_text = f"{oc_inst_primary_a:.1f} A" if math.isfinite(oc_inst_primary_a) else "Not enabled"
+        st.metric("High-set primary", high_set_text)
+    with oc_metric_col3:
+        st.metric("Suggested injections", f"{len(oc_test_points_df)} points")
+
+    oc_curve_max_secondary_a = max(
+        float(oc_test_points_df["Injection_Current_Secondary_A"].max()) * 1.3,
+        oc_pickup_secondary_a * 8.0,
+        (oc_inst_pickup_a * 1.2) if oc_inst_pickup_a > 0 else 0.0,
+    )
+    oc_curve_points = [
+        oc_pickup_secondary_a * (oc_curve_max_secondary_a / oc_pickup_secondary_a) ** (index / 79)
+        for index in range(80)
+    ]
+    oc_curve_df = pd.DataFrame(
+        {
+            "Current_Secondary_A": oc_curve_points,
+            "Expected_Operate_s": [
+                calc_commissioning_time_s(
+                    current_a=current_value,
+                    pickup_a=oc_pickup_secondary_a,
+                    curve_name=oc_curve_name,
+                    tms=oc_tms,
+                    definite_time_s=oc_definite_time_s,
+                    inst_pickup_a=oc_inst_pickup_a,
+                )
+                for current_value in oc_curve_points
+            ],
+        }
+    )
+    oc_curve_df = oc_curve_df.replace([math.inf, -math.inf], math.nan).dropna()
+
+    st.markdown("#### Recorded Settings")
+    st.dataframe(
+        oc_settings_df.style.format(
+            {
+                "CT_Primary_A": "{:.1f}",
+                "CT_Secondary_A": "{:.1f}",
+                "Pickup_Secondary_A": "{:.2f}",
+                "Pickup_Primary_A": "{:.1f}",
+                "TMS": "{:.3f}",
+                "Definite_Time_s": "{:.3f}",
+                "High_Set_Secondary_A": "{:.2f}",
+                "High_Set_Primary_A": "{:.1f}",
+            }
+        ),
+        use_container_width=True,
+    )
+
+    oc_download_col1, oc_download_col2 = st.columns(2)
+    with oc_download_col1:
+        st.download_button(
+            "Export OC/EF settings CSV",
+            data=oc_settings_df.to_csv(index=False).encode("utf-8"),
+            file_name="oc_ef_commissioning_settings.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with oc_download_col2:
+        st.download_button(
+            "Export OC/EF test points CSV",
+            data=oc_test_points_df.to_csv(index=False).encode("utf-8"),
+            file_name="oc_ef_commissioning_test_points.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    st.markdown("#### Suggested Three-Point Injection Plan")
+    st.dataframe(
+        oc_test_points_df.style.format(
+            {
+                "Injection_Current_Secondary_A": "{:.2f}",
+                "Injection_Current_Primary_A": "{:.1f}",
+                "Expected_Operate_s": "{:.3f}",
+            }
+        ),
+        use_container_width=True,
+    )
+    if oc_inst_pickup_a > 0:
+        st.caption(
+            f"High-set is enabled at {oc_inst_pickup_a:.2f} A secondary. Add a separate pickup check around 0.95x / 1.05x high-set if site scope includes the instantaneous element."
+        )
+
+    st.markdown("#### Expected Operating Curve")
+    if oc_curve_df.empty:
+        st.warning("No valid OC/EF curve points are available for the selected settings.")
+    else:
+        oc_curve_chart = alt.Chart(oc_curve_df).mark_line().encode(
+            x=alt.X(
+                "Current_Secondary_A:Q",
+                title="Secondary injection current (A)",
+                scale=alt.Scale(type="log"),
+                axis=alt.Axis(grid=True),
+            ),
+            y=alt.Y(
+                "Expected_Operate_s:Q",
+                title="Expected operating time (s)",
+                scale=alt.Scale(type="log"),
+                axis=alt.Axis(grid=True),
+            ),
+            tooltip=[
+                alt.Tooltip("Current_Secondary_A:Q", title="Secondary current (A)", format=".2f"),
+                alt.Tooltip("Expected_Operate_s:Q", title="Expected time (s)", format=".3f"),
+            ],
+        )
+        oc_point_chart = alt.Chart(oc_test_points_df).mark_point(size=90, filled=True).encode(
+            x=alt.X("Injection_Current_Secondary_A:Q", scale=alt.Scale(type="log")),
+            y=alt.Y("Expected_Operate_s:Q", scale=alt.Scale(type="log")),
+            color=alt.Color("Point:N", legend=None),
+            tooltip=[
+                alt.Tooltip("Point:N"),
+                alt.Tooltip("Purpose:N"),
+                alt.Tooltip("Injection_Current_Secondary_A:Q", title="Secondary current (A)", format=".2f"),
+                alt.Tooltip("Expected_Operate_s:Q", title="Expected time (s)", format=".3f"),
+                alt.Tooltip("Expected_Mode:N", title="Mode"),
+            ],
+        )
+        st.altair_chart(
+            alt.layer(oc_curve_chart, oc_point_chart).properties(height=420),
+            use_container_width=True,
+        )
+
+with sel787_tab:
+    st.subheader("SEL-787 Differential Commissioning Worksheet")
+    st.caption(
+        "Record differential settings, plot the expected restrained characteristic, and generate suggested secondary injection points."
+    )
+    st.info(SEL787_DEFAULT_NOTES)
+
+    sel_settings_col1, sel_settings_col2, sel_settings_col3 = st.columns(3)
+    with sel_settings_col1:
+        sel_asset_name = st.text_input(
+            "Transformer / relay reference",
+            key="sel787_asset_name",
+        )
+        sel_w1_ct_primary_a = st.number_input(
+            "Winding 1 CT primary (A)",
+            min_value=1.0,
+            step=1.0,
+            key="sel787_w1_ct_primary_a",
+        )
+        sel_w1_ct_secondary_a = st.selectbox(
+            "Winding 1 CT secondary (A)",
+            options=[1.0, 5.0],
+            key="sel787_w1_ct_secondary_a",
+        )
+        sel_w2_ct_primary_a = st.number_input(
+            "Winding 2 CT primary (A)",
+            min_value=1.0,
+            step=1.0,
+            key="sel787_w2_ct_primary_a",
+        )
+
+    with sel_settings_col2:
+        sel_w2_ct_secondary_a = st.selectbox(
+            "Winding 2 CT secondary (A)",
+            options=[1.0, 5.0],
+            key="sel787_w2_ct_secondary_a",
+        )
+        sel_pickup_a = st.number_input(
+            "Differential pickup (A secondary)",
+            min_value=0.05,
+            step=0.05,
+            key="sel787_pickup_a",
+        )
+        sel_slope1_pct = st.number_input(
+            "Slope 1 (%)",
+            min_value=0.0,
+            max_value=100.0,
+            step=1.0,
+            key="sel787_slope1_pct",
+        )
+        sel_slope2_pct = st.number_input(
+            "Slope 2 (%)",
+            min_value=0.0,
+            max_value=100.0,
+            step=1.0,
+            key="sel787_slope2_pct",
+        )
+
+    with sel_settings_col3:
+        sel_breakpoint_a = st.number_input(
+            "Slope breakpoint (A restraint)",
+            min_value=0.0,
+            step=0.10,
+            key="sel787_breakpoint_a",
+        )
+        sel_unrestrained_a = st.number_input(
+            "Unrestrained 87U pickup (A secondary)",
+            min_value=0.0,
+            step=0.10,
+            key="sel787_unrestrained_a",
+        )
+        sel_h2_block_pct = st.number_input(
+            "2nd harmonic block (%)",
+            min_value=0.0,
+            max_value=100.0,
+            step=1.0,
+            key="sel787_h2_block_pct",
+        )
+        sel_h5_block_pct = st.number_input(
+            "5th harmonic block (%)",
+            min_value=0.0,
+            max_value=100.0,
+            step=1.0,
+            key="sel787_h5_block_pct",
+        )
+
+    sel_settings_df = pd.DataFrame(
+        [
+            {
+                "Relay_Model": "SEL-787",
+                "Asset": sel_asset_name,
+                "W1_CT_Primary_A": sel_w1_ct_primary_a,
+                "W1_CT_Secondary_A": sel_w1_ct_secondary_a,
+                "W2_CT_Primary_A": sel_w2_ct_primary_a,
+                "W2_CT_Secondary_A": sel_w2_ct_secondary_a,
+                "Diff_Pickup_A": sel_pickup_a,
+                "Slope1_pct": sel_slope1_pct,
+                "Slope2_pct": sel_slope2_pct,
+                "Breakpoint_A": sel_breakpoint_a,
+                "Unrestrained_87U_A": sel_unrestrained_a,
+                "2nd_Harmonic_Block_pct": sel_h2_block_pct,
+                "5th_Harmonic_Block_pct": sel_h5_block_pct,
+            }
+        ]
+    )
+
+    sel_test_points_df = build_sel787_test_points(
+        pickup_a=sel_pickup_a,
+        slope1_pct=sel_slope1_pct,
+        slope2_pct=sel_slope2_pct,
+        breakpoint_a=sel_breakpoint_a,
+        unrestrained_a=sel_unrestrained_a,
+    )
+
+    sel_metric_col1, sel_metric_col2, sel_metric_col3 = st.columns(3)
+    with sel_metric_col1:
+        st.metric("Differential pickup", f"{sel_pickup_a:.2f} A")
+    with sel_metric_col2:
+        st.metric("Breakpoint restraint", f"{sel_breakpoint_a:.2f} A")
+    with sel_metric_col3:
+        unrestrained_text = f"{sel_unrestrained_a:.2f} A" if sel_unrestrained_a > 0 else "Disabled"
+        st.metric("87U pickup", unrestrained_text)
+
+    st.markdown("#### Recorded Settings")
+    st.dataframe(
+        sel_settings_df.style.format(
+            {
+                "W1_CT_Primary_A": "{:.1f}",
+                "W1_CT_Secondary_A": "{:.1f}",
+                "W2_CT_Primary_A": "{:.1f}",
+                "W2_CT_Secondary_A": "{:.1f}",
+                "Diff_Pickup_A": "{:.2f}",
+                "Slope1_pct": "{:.1f}",
+                "Slope2_pct": "{:.1f}",
+                "Breakpoint_A": "{:.2f}",
+                "Unrestrained_87U_A": "{:.2f}",
+                "2nd_Harmonic_Block_pct": "{:.1f}",
+                "5th_Harmonic_Block_pct": "{:.1f}",
+            }
+        ),
+        use_container_width=True,
+    )
+
+    sel_download_col1, sel_download_col2 = st.columns(2)
+    with sel_download_col1:
+        st.download_button(
+            "Export SEL-787 settings CSV",
+            data=sel_settings_df.to_csv(index=False).encode("utf-8"),
+            file_name="sel_787_settings.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with sel_download_col2:
+        st.download_button(
+            "Export SEL-787 test points CSV",
+            data=sel_test_points_df.to_csv(index=False).encode("utf-8"),
+            file_name="sel_787_test_points.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    st.markdown("#### Suggested Three-Point Injection Plan")
+    st.dataframe(
+        sel_test_points_df.style.format(
+            {
+                "Irest_A": "{:.2f}",
+                "Iop_A": "{:.2f}",
+                "Side1_Secondary_A": "{:.2f}",
+                "Side2_Secondary_A": "{:.2f}",
+                "Characteristic_Threshold_A": "{:.2f}",
+            }
+        ),
+        use_container_width=True,
+    )
+
+    sel_restraint_limit_a = max(sel_breakpoint_a * 2.5, sel_pickup_a * 10.0, 10.0)
+    sel_characteristic_df = pd.DataFrame(
+        {
+            "Irest_A": [sel_restraint_limit_a * index / 100 for index in range(101)],
+        }
+    )
+    sel_characteristic_df["Trip_Threshold_A"] = sel_characteristic_df["Irest_A"].apply(
+        lambda restraint_value: sel787_operate_threshold(
+            restraint_value,
+            sel_pickup_a,
+            sel_slope1_pct,
+            sel_slope2_pct,
+            sel_breakpoint_a,
+        )
+    )
+
+    st.markdown("#### Expected Differential Characteristic")
+    sel_chart_layers = [
+        alt.Chart(sel_characteristic_df)
+        .mark_line()
+        .encode(
+            x=alt.X("Irest_A:Q", title="Restraint current (A secondary)", axis=alt.Axis(grid=True)),
+            y=alt.Y("Trip_Threshold_A:Q", title="Operate current (A secondary)", axis=alt.Axis(grid=True)),
+            tooltip=[
+                alt.Tooltip("Irest_A:Q", title="Irest (A)", format=".2f"),
+                alt.Tooltip("Trip_Threshold_A:Q", title="Trip threshold (A)", format=".2f"),
+            ],
+        )
+    ]
+
+    if sel_unrestrained_a > 0:
+        sel_unrestrained_df = pd.DataFrame(
+            {
+                "Irest_A": [0.0, sel_restraint_limit_a],
+                "Trip_Threshold_A": [sel_unrestrained_a, sel_unrestrained_a],
+                "Legend": ["87U", "87U"],
+            }
+        )
+        sel_chart_layers.append(
+            alt.Chart(sel_unrestrained_df)
+            .mark_rule(strokeDash=[4, 4], color="#D62728")
+            .encode(
+                y=alt.Y("Trip_Threshold_A:Q"),
+                tooltip=[alt.Tooltip("Trip_Threshold_A:Q", title="87U pickup (A)", format=".2f")],
+            )
+        )
+
+    sel_chart_layers.append(
+        alt.Chart(sel_test_points_df)
+        .mark_point(size=90, filled=True)
+        .encode(
+            x=alt.X("Irest_A:Q"),
+            y=alt.Y("Iop_A:Q"),
+            color=alt.Color("Expected_Result:N", title="Expected"),
+            tooltip=[
+                alt.Tooltip("Test:N"),
+                alt.Tooltip("Purpose:N"),
+                alt.Tooltip("Irest_A:Q", title="Irest (A)", format=".2f"),
+                alt.Tooltip("Iop_A:Q", title="Iop (A)", format=".2f"),
+                alt.Tooltip("Expected_Result:N", title="Expected"),
+            ],
+        )
+    )
+
+    st.altair_chart(alt.layer(*sel_chart_layers).properties(height=420), use_container_width=True)
+
+with translay_tab:
+    st.subheader("Translay Commissioning Worksheet")
+    st.caption(
+        "Record translay settings, calculate expected restrained-spill characteristic, and generate three suggested injection points."
+    )
+
+    translay_relay_model_col1, translay_relay_model_col2 = st.columns([4, 1])
+    with translay_relay_model_col1:
+        translay_relay_model = st.selectbox(
+            "Translay relay model",
+            options=TRANSLAY_RELAY_OPTIONS,
+            key="translay_relay_model",
+        )
+    with translay_relay_model_col2:
+        st.write("")
+        st.write("")
+        if st.button("Apply model defaults", key="translay_apply_defaults", use_container_width=True):
+            selected_defaults = TRANSLAY_MODEL_DEFAULTS[translay_relay_model]
+            st.session_state["translay_pickup_a"] = selected_defaults["pickup_a"]
+            st.session_state["translay_slope_pct"] = selected_defaults["slope_pct"]
+            st.session_state["translay_operate_time_s"] = selected_defaults["operate_time_s"]
+            st.session_state["translay_high_set_spill_a"] = selected_defaults["high_set_spill_a"]
+            st.rerun()
+
+    translay_col1, translay_col2, translay_col3 = st.columns(3)
+    with translay_col1:
+        translay_circuit_name = st.text_input(
+            "Protected circuit reference",
+            key="translay_circuit_name",
+        )
+        translay_local_ct_primary_a = st.number_input(
+            "Local CT primary (A)",
+            min_value=1.0,
+            step=1.0,
+            key="translay_local_ct_primary_a",
+        )
+        translay_local_ct_secondary_a = st.selectbox(
+            "Local CT secondary (A)",
+            options=[1.0, 5.0],
+            key="translay_local_ct_secondary_a",
+        )
+
+    with translay_col2:
+        translay_remote_ct_primary_a = st.number_input(
+            "Remote CT primary (A)",
+            min_value=1.0,
+            step=1.0,
+            key="translay_remote_ct_primary_a",
+        )
+        translay_remote_ct_secondary_a = st.selectbox(
+            "Remote CT secondary (A)",
+            options=[1.0, 5.0],
+            key="translay_remote_ct_secondary_a",
+        )
+        translay_pickup_a = st.number_input(
+            "Spill pickup (A secondary)",
+            min_value=0.02,
+            step=0.01,
+            key="translay_pickup_a",
+        )
+
+    with translay_col3:
+        translay_slope_pct = st.number_input(
+            "Restraint slope (%)",
+            min_value=0.0,
+            max_value=100.0,
+            step=1.0,
+            key="translay_slope_pct",
+        )
+        translay_operate_time_s = st.number_input(
+            "Expected operate time (s)",
+            min_value=0.01,
+            max_value=10.0,
+            step=0.01,
+            key="translay_operate_time_s",
+        )
+        translay_high_set_spill_a = st.number_input(
+            "High-set spill element (A secondary)",
+            min_value=0.0,
+            step=0.01,
+            key="translay_high_set_spill_a",
+        )
+        translay_notes = st.text_area(
+            "Commissioning notes",
+            key="translay_notes",
+            height=90,
+        )
+
+    st.info(TRANSLAY_MODEL_NOTES[translay_relay_model])
+
+    translay_local_ratio = translay_local_ct_primary_a / translay_local_ct_secondary_a
+    translay_remote_ratio = translay_remote_ct_primary_a / translay_remote_ct_secondary_a
+
+    translay_settings_df = pd.DataFrame(
+        [
+            {
+                "Relay_Model": translay_relay_model,
+                "Circuit": translay_circuit_name,
+                "Local_CT_Primary_A": translay_local_ct_primary_a,
+                "Local_CT_Secondary_A": translay_local_ct_secondary_a,
+                "Remote_CT_Primary_A": translay_remote_ct_primary_a,
+                "Remote_CT_Secondary_A": translay_remote_ct_secondary_a,
+                "Spill_Pickup_A": translay_pickup_a,
+                "Slope_pct": translay_slope_pct,
+                "Expected_Operate_s": translay_operate_time_s,
+                "High_Set_Spill_A": translay_high_set_spill_a,
+                "Notes": translay_notes,
+            }
+        ]
+    )
+
+    translay_test_points_df = build_translay_test_points(
+        pickup_a=translay_pickup_a,
+        slope_pct=translay_slope_pct,
+        operate_time_s=translay_operate_time_s,
+        high_set_spill_a=translay_high_set_spill_a,
+    )
+    translay_test_points_df["Local_Current_Primary_A"] = (
+        translay_test_points_df["Local_Current_A"] * translay_local_ratio
+    )
+    translay_test_points_df["Remote_Current_Primary_A"] = (
+        translay_test_points_df["Remote_Current_A"] * translay_remote_ratio
+    )
+    translay_test_points_df["Expected_Operate_Display"] = translay_test_points_df[
+        "Expected_Operate_s"
+    ].apply(format_time_value)
+
+    translay_metric_col1, translay_metric_col2, translay_metric_col3 = st.columns(3)
+    with translay_metric_col1:
+        st.metric("Spill pickup", f"{translay_pickup_a:.2f} A")
+    with translay_metric_col2:
+        st.metric("Restraint slope", f"{translay_slope_pct:.1f} %")
+    with translay_metric_col3:
+        st.metric("Suggested injections", f"{len(translay_test_points_df)} points")
+
+    st.markdown("#### Recorded Settings")
+    st.dataframe(
+        translay_settings_df.style.format(
+            {
+                "Local_CT_Primary_A": "{:.1f}",
+                "Local_CT_Secondary_A": "{:.1f}",
+                "Remote_CT_Primary_A": "{:.1f}",
+                "Remote_CT_Secondary_A": "{:.1f}",
+                "Spill_Pickup_A": "{:.2f}",
+                "Slope_pct": "{:.1f}",
+                "Expected_Operate_s": "{:.3f}",
+                "High_Set_Spill_A": "{:.2f}",
+            }
+        ),
+        use_container_width=True,
+    )
+
+    translay_download_col1, translay_download_col2 = st.columns(2)
+    with translay_download_col1:
+        st.download_button(
+            "Export Translay settings CSV",
+            data=translay_settings_df.to_csv(index=False).encode("utf-8"),
+            file_name="translay_commissioning_settings.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with translay_download_col2:
+        st.download_button(
+            "Export Translay test points CSV",
+            data=translay_test_points_df.to_csv(index=False).encode("utf-8"),
+            file_name="translay_commissioning_test_points.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    st.markdown("#### Suggested Three-Point Injection Plan")
+    st.dataframe(
+        translay_test_points_df.style.format(
+            {
+                "Through_Current_A": "{:.2f}",
+                "Spill_Current_A": "{:.2f}",
+                "Local_Current_A": "{:.2f}",
+                "Remote_Current_A": "{:.2f}",
+                "Local_Current_Primary_A": "{:.1f}",
+                "Remote_Current_Primary_A": "{:.1f}",
+                "Trip_Threshold_A": "{:.2f}",
+                "Expected_Operate_s": "{:.3f}",
+            }
+        ),
+        use_container_width=True,
+    )
+    st.caption(
+        "Injection values are listed at relay secondary current level and converted to equivalent local/remote primary values using the entered CT ratios."
+    )
+
+    translay_max_through_a = max(
+        float(translay_test_points_df["Through_Current_A"].max()) * 1.4,
+        translay_pickup_a * 20.0,
+        5.0,
+    )
+    translay_characteristic_df = pd.DataFrame(
+        {
+            "Through_Current_A": [translay_max_through_a * index / 100 for index in range(101)],
+        }
+    )
+    translay_characteristic_df["Trip_Threshold_A"] = translay_characteristic_df[
+        "Through_Current_A"
+    ].apply(
+        lambda through_value: translay_trip_threshold(
+            through_current_a=through_value,
+            pickup_a=translay_pickup_a,
+            slope_pct=translay_slope_pct,
+        )
+    )
+
+    st.markdown("#### Expected Translay Characteristic")
+    translay_chart_layers = [
+        alt.Chart(translay_characteristic_df)
+        .mark_line()
+        .encode(
+            x=alt.X("Through_Current_A:Q", title="Through current (A secondary)", axis=alt.Axis(grid=True)),
+            y=alt.Y("Trip_Threshold_A:Q", title="Spill operate threshold (A secondary)", axis=alt.Axis(grid=True)),
+            tooltip=[
+                alt.Tooltip("Through_Current_A:Q", title="Through current (A)", format=".2f"),
+                alt.Tooltip("Trip_Threshold_A:Q", title="Threshold (A)", format=".2f"),
+            ],
+        )
+    ]
+
+    if translay_high_set_spill_a > 0:
+        translay_high_set_df = pd.DataFrame(
+            {
+                "High_Set_Spill_A": [translay_high_set_spill_a],
+            }
+        )
+        translay_chart_layers.append(
+            alt.Chart(translay_high_set_df)
+            .mark_rule(strokeDash=[4, 4], color="#D62728")
+            .encode(
+                y=alt.Y("High_Set_Spill_A:Q"),
+                tooltip=[alt.Tooltip("High_Set_Spill_A:Q", title="High-set spill (A)", format=".2f")],
+            )
+        )
+
+    translay_chart_layers.append(
+        alt.Chart(translay_test_points_df)
+        .mark_point(size=90, filled=True)
+        .encode(
+            x=alt.X("Through_Current_A:Q"),
+            y=alt.Y("Spill_Current_A:Q"),
+            color=alt.Color("Expected_Result:N", title="Expected"),
+            tooltip=[
+                alt.Tooltip("Point:N"),
+                alt.Tooltip("Purpose:N"),
+                alt.Tooltip("Through_Current_A:Q", title="Through current (A)", format=".2f"),
+                alt.Tooltip("Spill_Current_A:Q", title="Spill current (A)", format=".2f"),
+                alt.Tooltip("Expected_Result:N", title="Expected"),
+                alt.Tooltip("Expected_Mode:N", title="Mode"),
+            ],
+        )
+    )
+
+    st.altair_chart(alt.layer(*translay_chart_layers).properties(height=420), use_container_width=True)
+
 with formula_tab:
     st.subheader("Formula Reference")
     st.caption(
         "Equations used in the app model, including per-unit/base conversion, sequence fault calculations, "
-        "relay timing, grading, and simplified arc-flash screening."
+        "relay timing, grading, commissioning calculations, and simplified arc-flash screening."
     )
 
     st.markdown("#### Per-Unit / Base Conversion")
@@ -1777,8 +3550,21 @@ with formula_tab:
     st.caption(
         "Relay logic used: no trip if I <= pickup or invalid settings; instantaneous element trips at 0.05 s when enabled and I >= Inst_A."
     )
+    st.latex(r"t_{\mathrm{definite}} = t_{\mathrm{set}} \quad \mathrm{for}\ I > I_p")
     st.latex(r"\Delta t = t_{\mathrm{upstream}} - t_{\mathrm{downstream}}")
     st.latex(r"\mathrm{PASS\ if\ } \Delta t \ge t_{\mathrm{grading\,target}}")
+
+    st.markdown("#### Commissioning Conversion, SEL-787, and Translay")
+    st.latex(r"I_{\mathrm{primary}} = I_{\mathrm{secondary}}\,\frac{CT_{\mathrm{primary}}}{CT_{\mathrm{secondary}}}")
+    st.latex(r"I_{\mathrm{inj}} = m\,I_p")
+    st.latex(r"I_{\mathrm{op}} = \lvert I_1 - I_2 \rvert")
+    st.latex(r"I_{\mathrm{rest}} = \frac{\lvert I_1 \rvert + \lvert I_2 \rvert}{2}")
+    st.latex(r"I_{\mathrm{trip}} = I_{\mathrm{pickup}} + S_1 I_{\mathrm{rest}} \quad \mathrm{for}\ I_{\mathrm{rest}} \le I_{\mathrm{break}}")
+    st.latex(r"I_{\mathrm{trip}} = I_{\mathrm{pickup}} + S_1 I_{\mathrm{break}} + S_2\left(I_{\mathrm{rest}} - I_{\mathrm{break}}\right) \quad \mathrm{for}\ I_{\mathrm{rest}} > I_{\mathrm{break}}")
+    st.latex(r"I_{\mathrm{spill}} = \lvert I_{\mathrm{local}} - I_{\mathrm{remote}} \rvert")
+    st.latex(r"I_{\mathrm{through}} = \frac{\lvert I_{\mathrm{local}} \rvert + \lvert I_{\mathrm{remote}} \rvert}{2}")
+    st.latex(r"I_{\mathrm{trip,translay}} = I_{\mathrm{pickup}} + S\,I_{\mathrm{through}}")
+    st.latex(r"\mathrm{Trip\ if}\ I_{\mathrm{spill}} \ge I_{\mathrm{trip,translay}}")
 
     st.markdown("#### Simplified 11kV Arc-Flash Screening")
     st.latex(r"I_{\mathrm{arc}} = I_{\mathrm{bolted}}\,f_{\mathrm{arc}}")

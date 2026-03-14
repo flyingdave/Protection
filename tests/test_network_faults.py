@@ -206,6 +206,55 @@ class NetworkFaultCalculationTests(unittest.TestCase):
             base["load_fault"]["I_3ph_kA"],
         )
 
+    def test_default_line_builder_matches_template_fault_levels(self) -> None:
+        builder_results = app.calculate_line_builder_network(app.default_network_elements_df())
+        builder_fault_df = builder_results["fault_df"]
+        template_results = self._compute_network_faults()
+
+        transformer_bus_fault = (
+            builder_fault_df.loc[builder_fault_df["Bus"] == "11kV Transformer Busbar"].iloc[0].to_dict()
+        )
+        remote_bus_fault = (
+            builder_fault_df.loc[builder_fault_df["Bus"] == "11kV Remote Busbar"].iloc[0].to_dict()
+        )
+
+        for key, expected_value in template_results["incomer_fault"].items():
+            self.assertAlmostEqual(transformer_bus_fault[key], expected_value, places=6)
+
+        for key, expected_value in template_results["load_fault"].items():
+            self.assertAlmostEqual(remote_bus_fault[key], expected_value, places=6)
+
+    def test_line_builder_busbars_define_fault_locations(self) -> None:
+        network_df = app.default_network_elements_df().copy()
+        network_df.loc[network_df["Name"] == "11kV Transformer Busbar", "Name"] = "Main Switchboard"
+        network_df.loc[network_df["Name"] == "11kV Remote Busbar", "Name"] = "Remote Load Bus"
+
+        builder_results = app.calculate_line_builder_network(network_df)
+        fault_buses = builder_results["fault_df"]["Bus"].tolist()
+
+        self.assertEqual(fault_buses, ["Main Switchboard", "Remote Load Bus"])
+        self.assertIn("Main Switchboard", builder_results["diagram_dot"])
+        self.assertIn("Remote Load Bus", builder_results["diagram_dot"])
+
+    def test_line_builder_parallel_feeder_increases_remote_fault_level(self) -> None:
+        base_results = app.calculate_line_builder_network(app.default_network_elements_df())
+        parallel_df = app.default_network_elements_df().copy()
+        parallel_df.loc[parallel_df["Name"] == "11kV Feeder Cable", "Parallel_Count"] = 2
+        parallel_results = app.calculate_line_builder_network(parallel_df)
+
+        base_faults = base_results["fault_df"].set_index("Bus")
+        parallel_faults = parallel_results["fault_df"].set_index("Bus")
+
+        self.assertAlmostEqual(
+            parallel_faults.loc["11kV Transformer Busbar", "I_3ph_kA"],
+            base_faults.loc["11kV Transformer Busbar", "I_3ph_kA"],
+            places=9,
+        )
+        self.assertGreater(
+            parallel_faults.loc["11kV Remote Busbar", "I_3ph_kA"],
+            base_faults.loc["11kV Remote Busbar", "I_3ph_kA"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
