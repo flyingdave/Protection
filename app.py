@@ -3747,6 +3747,10 @@ with relay_test_tab:
         "Create one instruction sheet per panel with fixed header data and protection-element test instructions."
     )
 
+    pending_panel_id = str(st.session_state.pop("relay_test_pending_panel_id", "")).strip()
+    if pending_panel_id:
+        st.session_state["relay_test_panel_id"] = pending_panel_id
+
     relay_test_store = st.session_state.get("relay_test_sheets", {})
     saved_panel_ids = sorted(relay_test_store.keys())
 
@@ -3781,7 +3785,7 @@ with relay_test_tab:
             loaded_header = sanitize_relay_test_header(loaded_sheet.get("header", {}))
             for field_key, _ in RELAY_TEST_HEADER_FIELDS:
                 st.session_state[f"relay_test_{field_key}"] = loaded_header[field_key]
-            st.session_state["relay_test_panel_id"] = panel_to_load
+            st.session_state["relay_test_pending_panel_id"] = panel_to_load
             st.session_state.relay_test_elements = sanitize_relay_test_elements(
                 pd.DataFrame(loaded_sheet.get("elements", []))
             )
@@ -3922,13 +3926,11 @@ with relay_test_tab:
             else:
                 if not current_header.get("panel_number"):
                     current_header["panel_number"] = panel_sheet_key
-                    st.session_state["relay_test_panel_number"] = panel_sheet_key
                 relay_test_store[panel_sheet_key] = {
                     "header": current_header,
                     "elements": current_elements_df.to_dict(orient="records"),
                 }
                 st.session_state.relay_test_sheets = sanitize_relay_test_sheet_store(relay_test_store)
-                st.session_state["relay_test_panel_id"] = panel_sheet_key
                 st.success(f"Saved relay test instruction sheet for panel '{panel_sheet_key}'.")
 
     active_panel_id = relay_test_panel_id.strip() or current_header.get("panel_number", "").strip() or "Panel-001"
