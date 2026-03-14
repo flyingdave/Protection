@@ -46,6 +46,45 @@ TRANSLAY_MODEL_DEFAULTS = {
     "H07": {"pickup_a": 0.14, "slope_pct": 30.0, "operate_time_s": 0.07, "high_set_spill_a": 0.0},
     "Numerical (Newer)": {"pickup_a": 0.10, "slope_pct": 35.0, "operate_time_s": 0.05, "high_set_spill_a": 0.60},
 }
+RELAY_TEST_ELEMENT_OPTIONS = [
+    "OC/EF",
+    "Differential",
+    "Balanced Voltage",
+    "Buchholz",
+    "Translay",
+    "Intertrip Send",
+    "Intertrip Receive",
+    "Multitrip Relay",
+    "Busbar Protection",
+    "Other",
+]
+RELAY_TEST_ELEMENT_COLUMNS = ["Element", "Relay_Details", "Test_Requirements"]
+RELAY_TEST_HEADER_FIELDS = [
+    ("substation_name", "Substation"),
+    ("substation_location", "Location"),
+    ("panel_number", "Panel Number"),
+    ("feeder_number", "Feeder Number"),
+    ("voltage_level", "Voltage Level"),
+    ("protection_scheme", "Protection Scheme"),
+    ("drawing_reference", "Drawing Reference"),
+    ("commissioning_date", "Commissioning Date"),
+    ("test_engineer", "Test Engineer"),
+    ("client_owner", "Client / Owner"),
+    ("other_constant_data", "Other Constant Data"),
+]
+RELAY_TEST_HEADER_DEFAULTS = {
+    "substation_name": "",
+    "substation_location": "",
+    "panel_number": "",
+    "feeder_number": "",
+    "voltage_level": "",
+    "protection_scheme": "",
+    "drawing_reference": "",
+    "commissioning_date": "",
+    "test_engineer": "",
+    "client_owner": "",
+    "other_constant_data": "",
+}
 COMMISSIONING_WIDGET_DEFAULTS = {
     "oc_ef_device_name": "Feeder 1",
     "oc_ef_ct_primary_a": 200.0,
@@ -77,6 +116,19 @@ COMMISSIONING_WIDGET_DEFAULTS = {
     "translay_operate_time_s": TRANSLAY_MODEL_DEFAULTS["H04"]["operate_time_s"],
     "translay_high_set_spill_a": TRANSLAY_MODEL_DEFAULTS["H04"]["high_set_spill_a"],
     "translay_notes": "",
+    "relay_test_panel_id": "Panel-001",
+    "relay_test_saved_panel_selection": "",
+    "relay_test_substation_name": "",
+    "relay_test_substation_location": "",
+    "relay_test_panel_number": "",
+    "relay_test_feeder_number": "",
+    "relay_test_voltage_level": "",
+    "relay_test_protection_scheme": "",
+    "relay_test_drawing_reference": "",
+    "relay_test_commissioning_date": "",
+    "relay_test_test_engineer": "",
+    "relay_test_client_owner": "",
+    "relay_test_other_constant_data": "",
 }
 
 RELAY_EXPORT_COLUMNS = ["Order", "Device", "Curve", "Pickup_A", "TMS", "Inst_A"]
@@ -820,6 +872,136 @@ def build_translay_test_points(
     return pd.DataFrame(test_plan_rows)
 
 
+def default_relay_test_elements_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Element": element_name,
+                "Relay_Details": "",
+                "Test_Requirements": "",
+            }
+            for element_name in RELAY_TEST_ELEMENT_OPTIONS
+        ]
+    )[RELAY_TEST_ELEMENT_COLUMNS]
+
+
+def sanitize_relay_test_elements(elements_df: pd.DataFrame) -> pd.DataFrame:
+    if elements_df.empty:
+        return default_relay_test_elements_df()
+
+    sanitized_df = elements_df.copy()
+    for column_name in RELAY_TEST_ELEMENT_COLUMNS:
+        if column_name not in sanitized_df.columns:
+            sanitized_df[column_name] = ""
+
+    sanitized_df["Element"] = (
+        sanitized_df["Element"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .replace("", "Other")
+    )
+    sanitized_df["Relay_Details"] = sanitized_df["Relay_Details"].fillna("").astype(str)
+    sanitized_df["Test_Requirements"] = sanitized_df["Test_Requirements"].fillna("").astype(str)
+
+    return sanitized_df[RELAY_TEST_ELEMENT_COLUMNS]
+
+
+def sanitize_relay_test_header(header_data: object) -> dict:
+    raw_header = header_data if isinstance(header_data, dict) else {}
+    sanitized_header = {}
+    for field_key, _ in RELAY_TEST_HEADER_FIELDS:
+        sanitized_header[field_key] = str(
+            raw_header.get(field_key, RELAY_TEST_HEADER_DEFAULTS[field_key])
+        ).strip()
+    return sanitized_header
+
+
+def sanitize_relay_test_sheet_store(sheet_store: object) -> dict:
+    if not isinstance(sheet_store, dict):
+        return {}
+
+    sanitized_store = {}
+    for panel_id_raw, sheet_data in sheet_store.items():
+        panel_id = str(panel_id_raw).strip()
+        if not panel_id:
+            continue
+
+        if isinstance(sheet_data, dict):
+            header_data = sanitize_relay_test_header(sheet_data.get("header", {}))
+            elements_df = sanitize_relay_test_elements(pd.DataFrame(sheet_data.get("elements", [])))
+        else:
+            header_data = sanitize_relay_test_header({})
+            elements_df = default_relay_test_elements_df()
+
+        sanitized_store[panel_id] = {
+            "header": header_data,
+            "elements": elements_df.to_dict(orient="records"),
+        }
+
+    return sanitized_store
+
+
+def build_relay_test_instruction_text(
+    panel_id: str,
+    header_data: dict,
+    elements_df: pd.DataFrame,
+) -> str:
+    panel_name = panel_id.strip() or "Panel-001"
+    sanitized_header = sanitize_relay_test_header(header_data)
+    sanitized_elements_df = sanitize_relay_test_elements(elements_df)
+
+    lines = [
+        "RELAY TEST INSTRUCTION SHEET",
+        f"Panel Sheet ID: {panel_name}",
+        "=" * 72,
+        "HEADER DETAILS",
+        "-" * 72,
+    ]
+
+    for field_key, field_label in RELAY_TEST_HEADER_FIELDS:
+        field_value = sanitized_header.get(field_key, "")
+        lines.append(f"{field_label}: {field_value if field_value else '-'}")
+
+    lines.extend(
+        [
+            "",
+            "PROTECTION ELEMENT TEST INSTRUCTIONS",
+            "-" * 72,
+        ]
+    )
+
+    for _, row in sanitized_elements_df.iterrows():
+        element_name = str(row["Element"]).strip() or "Other"
+        relay_details = str(row["Relay_Details"]).strip() or "-"
+        test_requirements = str(row["Test_Requirements"]).strip() or "-"
+
+        lines.extend(
+            [
+                f"Element: {element_name}",
+                "Left Column - Relay Details (including settings):",
+            ]
+        )
+        lines.extend([f"  {line}" for line in relay_details.splitlines()] if relay_details else ["  -"])
+        lines.append("Right Column - Test Requirements:")
+        lines.extend(
+            [f"  {line}" for line in test_requirements.splitlines()]
+            if test_requirements
+            else ["  -"]
+        )
+        lines.append("-" * 72)
+
+    lines.extend(
+        [
+            "",
+            "Print-to-PDF Note:",
+            "Export this sheet as .txt, open it in a text editor, then use Print -> Save as PDF.",
+        ]
+    )
+
+    return "\n".join(lines)
+
+
 def format_time_value(time_s: float) -> str:
     return f"{time_s:.3f}" if math.isfinite(time_s) else "No trip"
 
@@ -1288,10 +1470,31 @@ def persist_last_entered_state() -> None:
     if network_elements_df.empty:
         network_elements_df = default_network_elements_df()
 
+    relay_test_elements_df = sanitize_relay_test_elements(
+        pd.DataFrame(st.session_state.get("relay_test_elements", pd.DataFrame()))
+    )
+    relay_test_sheet_store = sanitize_relay_test_sheet_store(st.session_state.get("relay_test_sheets", {}))
+    relay_test_working_header = sanitize_relay_test_header(
+        {
+            field_key: st.session_state.get(
+                f"relay_test_{field_key}",
+                RELAY_TEST_HEADER_DEFAULTS[field_key],
+            )
+            for field_key, _ in RELAY_TEST_HEADER_FIELDS
+        }
+    )
+    relay_test_panel_id = str(
+        st.session_state.get("relay_test_panel_id", COMMISSIONING_WIDGET_DEFAULTS["relay_test_panel_id"])
+    ).strip() or COMMISSIONING_WIDGET_DEFAULTS["relay_test_panel_id"]
+
     payload = {
         "study_case": study_case_data,
         "relay_settings": relay_df[RELAY_EXPORT_COLUMNS].to_dict(orient="records"),
         "network_elements": network_elements_df[NETWORK_ELEMENT_COLUMNS].to_dict(orient="records"),
+        "relay_test_sheets": relay_test_sheet_store,
+        "relay_test_working_header": relay_test_working_header,
+        "relay_test_working_elements": relay_test_elements_df[RELAY_TEST_ELEMENT_COLUMNS].to_dict(orient="records"),
+        "relay_test_panel_id": relay_test_panel_id,
     }
 
     try:
@@ -1336,6 +1539,35 @@ def initialize_app_state() -> None:
         if sanitized_network_df.empty:
             sanitized_network_df = default_network_elements_df()
         st.session_state.network_elements = sanitized_network_df[NETWORK_ELEMENT_COLUMNS]
+
+    if "relay_test_sheets" not in st.session_state:
+        st.session_state.relay_test_sheets = sanitize_relay_test_sheet_store(
+            persisted_state.get("relay_test_sheets", {})
+        )
+
+    persisted_relay_test_header = sanitize_relay_test_header(
+        persisted_state.get("relay_test_working_header", {})
+    )
+    for field_key, _ in RELAY_TEST_HEADER_FIELDS:
+        state_key = f"relay_test_{field_key}"
+        if state_key not in st.session_state:
+            st.session_state[state_key] = persisted_relay_test_header[field_key]
+
+    if "relay_test_panel_id" not in st.session_state:
+        panel_id = str(
+            persisted_state.get("relay_test_panel_id", COMMISSIONING_WIDGET_DEFAULTS["relay_test_panel_id"])
+        ).strip()
+        st.session_state["relay_test_panel_id"] = (
+            panel_id if panel_id else COMMISSIONING_WIDGET_DEFAULTS["relay_test_panel_id"]
+        )
+
+    if "relay_test_elements" not in st.session_state:
+        relay_test_rows = persisted_state.get(
+            "relay_test_working_elements",
+            default_relay_test_elements_df().to_dict(orient="records"),
+        )
+        relay_test_df = sanitize_relay_test_elements(pd.DataFrame(relay_test_rows))
+        st.session_state.relay_test_elements = relay_test_df[RELAY_TEST_ELEMENT_COLUMNS]
 
 
 def load_network_preset() -> None:
@@ -1548,7 +1780,7 @@ with st.sidebar:
 
     st.caption(f"Active study: {project_name}")
 
-network_tab, fault_tab, protection_tab, arc_tab, full_arc_tab, oc_ef_commissioning_tab, sel787_tab, translay_tab, formula_tab = st.tabs(
+network_tab, fault_tab, protection_tab, arc_tab, full_arc_tab, oc_ef_commissioning_tab, sel787_tab, translay_tab, relay_test_tab, formula_tab = st.tabs(
     [
         "1) Network Inputs",
         "2) Fault Levels",
@@ -1558,7 +1790,8 @@ network_tab, fault_tab, protection_tab, arc_tab, full_arc_tab, oc_ef_commissioni
         "6) OC/EF Commissioning",
         "7) SEL-787 Differential",
         "8) Translay Commissioning",
-        "9) Formula Reference",
+        "9) Relay Test Instruction Sheet",
+        "10) Formula Reference",
     ]
 )
 
@@ -3507,6 +3740,224 @@ with translay_tab:
     )
 
     st.altair_chart(alt.layer(*translay_chart_layers).properties(height=420), use_container_width=True)
+
+with relay_test_tab:
+    st.subheader("Relay Test Instruction Sheet")
+    st.caption(
+        "Create one instruction sheet per panel with fixed header data and protection-element test instructions."
+    )
+
+    relay_test_store = st.session_state.get("relay_test_sheets", {})
+    saved_panel_ids = sorted(relay_test_store.keys())
+
+    sheet_col1, sheet_col2, sheet_col3 = st.columns([3, 2, 2])
+    with sheet_col1:
+        relay_test_panel_id = st.text_input(
+            "Panel sheet ID",
+            key="relay_test_panel_id",
+        )
+    with sheet_col2:
+        selected_saved_panel = st.selectbox(
+            "Saved panel sheets",
+            options=[""] + saved_panel_ids,
+            key="relay_test_saved_panel_selection",
+            help="Pick a saved panel and click Load to bring it into the editable sheet.",
+        )
+    with sheet_col3:
+        load_button_pressed = st.button(
+            "Load selected panel",
+            key="relay_test_load_button",
+            use_container_width=True,
+        )
+
+    if load_button_pressed:
+        panel_to_load = (selected_saved_panel or relay_test_panel_id).strip()
+        if not panel_to_load:
+            st.warning("Enter or select a panel sheet ID to load.")
+        elif panel_to_load not in relay_test_store:
+            st.warning(f"No saved sheet was found for panel '{panel_to_load}'.")
+        else:
+            loaded_sheet = relay_test_store[panel_to_load]
+            loaded_header = sanitize_relay_test_header(loaded_sheet.get("header", {}))
+            for field_key, _ in RELAY_TEST_HEADER_FIELDS:
+                st.session_state[f"relay_test_{field_key}"] = loaded_header[field_key]
+            st.session_state["relay_test_panel_id"] = panel_to_load
+            st.session_state.relay_test_elements = sanitize_relay_test_elements(
+                pd.DataFrame(loaded_sheet.get("elements", []))
+            )
+            st.session_state.pop("relay_test_elements_editor", None)
+            st.success(f"Loaded relay test sheet for panel '{panel_to_load}'.")
+            st.rerun()
+
+    header_col1, header_col2, header_col3 = st.columns(3)
+    with header_col1:
+        st.text_input("Substation", key="relay_test_substation_name")
+        st.text_input("Location", key="relay_test_substation_location")
+        st.text_input("Panel Number", key="relay_test_panel_number")
+        st.text_input("Feeder Number", key="relay_test_feeder_number")
+    with header_col2:
+        st.text_input("Voltage Level", key="relay_test_voltage_level")
+        st.text_input("Protection Scheme", key="relay_test_protection_scheme")
+        st.text_input("Drawing Reference", key="relay_test_drawing_reference")
+        st.text_input("Commissioning Date", key="relay_test_commissioning_date")
+    with header_col3:
+        st.text_input("Test Engineer", key="relay_test_test_engineer")
+        st.text_input("Client / Owner", key="relay_test_client_owner")
+        st.text_area(
+            "Other Constant Data",
+            key="relay_test_other_constant_data",
+            height=108,
+        )
+
+    relay_test_elements_df = pd.DataFrame(st.session_state.get("relay_test_elements", pd.DataFrame()))
+    relay_test_elements_df = sanitize_relay_test_elements(relay_test_elements_df)
+
+    populate_defaults_col1, populate_defaults_col2 = st.columns([2, 1])
+    with populate_defaults_col1:
+        st.caption(
+            "Left column: relay details and settings. Right column: test requirements for each protection element."
+        )
+    with populate_defaults_col2:
+        if st.button(
+            "Populate OC/EF, Differential, Translay",
+            key="relay_test_autofill_common",
+            use_container_width=True,
+        ):
+            populated_df = relay_test_elements_df.copy()
+
+            def update_element_row(element_name: str, relay_details: str, requirements: str) -> None:
+                row_matches = populated_df.index[populated_df["Element"] == element_name]
+                if not row_matches.empty:
+                    target_index = row_matches[0]
+                else:
+                    target_index = len(populated_df)
+                    populated_df.loc[target_index, "Element"] = element_name
+                populated_df.loc[target_index, "Relay_Details"] = relay_details
+                populated_df.loc[target_index, "Test_Requirements"] = requirements
+
+            oc_details = (
+                f"Model: {st.session_state.get('oc_ef_relay_model', '')}\n"
+                f"Element: {st.session_state.get('oc_ef_element_type', '')}\n"
+                f"Curve: {st.session_state.get('oc_ef_curve_name', '')}\n"
+                f"Pickup: {float(st.session_state.get('oc_ef_pickup_secondary_a', 0.0)):.2f} A sec\n"
+                f"TMS: {float(st.session_state.get('oc_ef_tms', 0.0)):.3f}\n"
+                f"High-set: {float(st.session_state.get('oc_ef_inst_pickup_a', 0.0)):.2f} A sec"
+            )
+            oc_requirements = (
+                "Inject at 1.5x, 3x, and 6x pickup secondary current. "
+                "Record operate times and compare against expected curve values."
+            )
+            update_element_row("OC/EF", oc_details, oc_requirements)
+
+            diff_details = (
+                f"Relay: SEL-787\n"
+                f"Pickup: {float(st.session_state.get('sel787_pickup_a', 0.0)):.2f} A\n"
+                f"Slope1/Slope2: {float(st.session_state.get('sel787_slope1_pct', 0.0)):.1f}% / {float(st.session_state.get('sel787_slope2_pct', 0.0)):.1f}%\n"
+                f"Breakpoint: {float(st.session_state.get('sel787_breakpoint_a', 0.0)):.2f} A"
+            )
+            diff_requirements = (
+                "Perform balanced stability check and low/high-bias operate checks. "
+                "Verify trip behavior versus restrained differential characteristic."
+            )
+            update_element_row("Differential", diff_details, diff_requirements)
+
+            translay_details = (
+                f"Model: {st.session_state.get('translay_relay_model', '')}\n"
+                f"Spill pickup: {float(st.session_state.get('translay_pickup_a', 0.0)):.2f} A\n"
+                f"Slope: {float(st.session_state.get('translay_slope_pct', 0.0)):.1f}%\n"
+                f"Expected operate time: {float(st.session_state.get('translay_operate_time_s', 0.0)):.3f} s"
+            )
+            translay_requirements = (
+                "Verify through-current stability and low/high-bias spill operate points. "
+                "Confirm timing and any high-set spill operation if enabled."
+            )
+            update_element_row("Translay", translay_details, translay_requirements)
+
+            st.session_state.relay_test_elements = sanitize_relay_test_elements(populated_df)
+            st.session_state.pop("relay_test_elements_editor", None)
+            st.success("Common protection elements populated from current commissioning settings.")
+            st.rerun()
+
+    edited_relay_test_elements_df = st.data_editor(
+        relay_test_elements_df,
+        num_rows="dynamic",
+        key="relay_test_elements_editor",
+        use_container_width=True,
+        height=360,
+        column_config={
+            "Element": st.column_config.SelectboxColumn(
+                "Protection Element",
+                options=RELAY_TEST_ELEMENT_OPTIONS,
+                required=True,
+            ),
+            "Relay_Details": st.column_config.TextColumn("Relay Details (left column)", width="large"),
+            "Test_Requirements": st.column_config.TextColumn(
+                "Test Requirements (right column)",
+                width="large",
+            ),
+        },
+    )
+    st.session_state.relay_test_elements = pd.DataFrame(edited_relay_test_elements_df).reset_index(drop=True)
+
+    current_header = sanitize_relay_test_header(
+        {
+            field_key: st.session_state.get(f"relay_test_{field_key}", RELAY_TEST_HEADER_DEFAULTS[field_key])
+            for field_key, _ in RELAY_TEST_HEADER_FIELDS
+        }
+    )
+    current_elements_df = sanitize_relay_test_elements(pd.DataFrame(st.session_state.relay_test_elements))
+
+    save_sheet_col1, save_sheet_col2, save_sheet_col3 = st.columns([2, 2, 3])
+    with save_sheet_col1:
+        save_sheet_pressed = st.button(
+            "Save panel sheet",
+            key="relay_test_save_button",
+            use_container_width=True,
+        )
+    with save_sheet_col2:
+        if save_sheet_pressed:
+            panel_sheet_key = relay_test_panel_id.strip() or current_header.get("panel_number", "").strip()
+            if not panel_sheet_key:
+                st.error("Enter a panel sheet ID or panel number before saving.")
+            else:
+                if not current_header.get("panel_number"):
+                    current_header["panel_number"] = panel_sheet_key
+                    st.session_state["relay_test_panel_number"] = panel_sheet_key
+                relay_test_store[panel_sheet_key] = {
+                    "header": current_header,
+                    "elements": current_elements_df.to_dict(orient="records"),
+                }
+                st.session_state.relay_test_sheets = sanitize_relay_test_sheet_store(relay_test_store)
+                st.session_state["relay_test_panel_id"] = panel_sheet_key
+                st.success(f"Saved relay test instruction sheet for panel '{panel_sheet_key}'.")
+
+    active_panel_id = relay_test_panel_id.strip() or current_header.get("panel_number", "").strip() or "Panel-001"
+    instruction_text = build_relay_test_instruction_text(
+        panel_id=active_panel_id,
+        header_data=current_header,
+        elements_df=current_elements_df,
+    )
+    safe_panel_filename = "".join(
+        character if (character.isalnum() or character in {"-", "_"}) else "_"
+        for character in active_panel_id
+    ).strip("_")
+    if not safe_panel_filename:
+        safe_panel_filename = "panel_001"
+
+    with save_sheet_col3:
+        st.download_button(
+            "Export instruction sheet text (.txt)",
+            data=instruction_text.encode("utf-8"),
+            file_name=f"relay_test_instruction_{safe_panel_filename}.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
+
+    st.caption(
+        "To create a PDF: export the .txt file, open it in any text editor, then print to PDF."
+    )
+    st.markdown("#### Sheet Preview (Text)")
+    st.code(instruction_text, language="text")
 
 with formula_tab:
     st.subheader("Formula Reference")
