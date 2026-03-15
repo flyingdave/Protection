@@ -20,6 +20,7 @@ CURVE_CONSTANTS = {
 OC_EF_RELAY_MODELS = ["P122", "CDG", "PBO"]
 COMMISSIONING_CURVE_OPTIONS = list(CURVE_CONSTANTS.keys()) + ["Definite Time"]
 COMMISSIONING_TEST_MULTIPLIERS = [1.5, 3.0, 6.0]
+TCC_AXIS_FLOOR_S = 0.001
 OC_EF_MODEL_NOTES = {
     "P122": "Digital OC/EF worksheet using the selected IEC inverse or definite-time stage.",
     "CDG": "Electromechanical OC/EF worksheet using the selected IEC-style commissioning curve approximation.",
@@ -58,7 +59,10 @@ RELAY_TEST_ELEMENT_OPTIONS = [
     "Busbar Protection",
     "Other",
 ]
-RELAY_TEST_ELEMENT_COLUMNS = ["Element", "Relay_Details", "Test_Requirements"]
+RELAY_TEST_DEFAULT_GROUP_NAME = "Relay 1"
+RELAY_TEST_ELEMENT_COLUMNS = ["Relay_Group", "Element", "Settings", "Test_Requirements"]
+RELAY_TEST_LAYOUT_OPTIONS = ["Grouped Detail", "ECNSW Compact"]
+RELAY_TEST_DEFAULT_LAYOUT = RELAY_TEST_LAYOUT_OPTIONS[0]
 RELAY_TEST_HEADER_FIELDS = [
     ("substation_name", "Substation"),
     ("substation_location", "Location"),
@@ -129,11 +133,12 @@ COMMISSIONING_WIDGET_DEFAULTS = {
     "relay_test_test_engineer": "",
     "relay_test_client_owner": "",
     "relay_test_other_constant_data": "",
+    "relay_test_layout_style": RELAY_TEST_DEFAULT_LAYOUT,
 }
 
 RELAY_EXPORT_COLUMNS = ["Order", "Device", "Curve", "Pickup_A", "TMS", "Inst_A"]
 APP_STATE_FILE = Path(".streamlit/last_entered_state.json")
-APP_REVISION = "Rev 0.2"
+APP_REVISION = "Rev 0.3"
 
 NETWORK_INPUT_MODE_OPTIONS = ["Template Inputs", "Line-by-line Builder"]
 NETWORK_ELEMENT_TYPE_OPTIONS = ["Source", "Reactor", "Cable", "Transformer", "Busbar", "Custom Z"]
@@ -607,6 +612,86 @@ def calc_relay_time_s(
     return tms * k / denominator
 
 
+def build_relay_tcc_points(
+    current_points: list[float],
+    pickup_a: float,
+    tms: float,
+    curve_name: str,
+    inst_pickup_a: float,
+    max_time_s: float = 30.0,
+) -> list[dict]:
+    points: list[dict] = []
+    sequence = 0
+    inst_enabled = inst_pickup_a > 0
+
+    for current_value in current_points:
+        if inst_enabled and current_value > inst_pickup_a:
+            continue
+
+        operate_time_s = calc_relay_time_s(
+            current_a=current_value,
+            pickup_a=pickup_a,
+            tms=tms,
+            curve_name=curve_name,
+            inst_pickup_a=0.0,
+        )
+
+        if math.isfinite(operate_time_s) and 0 < operate_time_s <= max_time_s:
+            points.append(
+                {
+                    "Current_A": float(current_value),
+                    "Operate_s": float(operate_time_s),
+                    "Seq": sequence,
+                }
+            )
+            sequence += 1
+
+    if inst_enabled:
+        inverse_time_at_inst = calc_relay_time_s(
+            current_a=inst_pickup_a,
+            pickup_a=pickup_a,
+            tms=tms,
+            curve_name=curve_name,
+            inst_pickup_a=0.0,
+        )
+
+        has_inst_inverse_point = any(
+            math.isclose(float(point["Current_A"]), float(inst_pickup_a), rel_tol=0.0, abs_tol=1e-9)
+            and math.isclose(
+                float(point["Operate_s"]),
+                float(inverse_time_at_inst),
+                rel_tol=0.0,
+                abs_tol=1e-9,
+            )
+            for point in points
+            if math.isfinite(float(point["Operate_s"])) and math.isfinite(float(inverse_time_at_inst))
+        )
+
+        if (
+            math.isfinite(inverse_time_at_inst)
+            and 0 < inverse_time_at_inst <= max_time_s
+            and not has_inst_inverse_point
+        ):
+            points.append(
+                {
+                    "Current_A": float(inst_pickup_a),
+                    "Operate_s": float(inverse_time_at_inst),
+                    "Seq": sequence,
+                }
+            )
+            sequence += 1
+
+        points.append(
+            {
+                "Current_A": float(inst_pickup_a),
+                "Operate_s": float(TCC_AXIS_FLOOR_S),
+                "Seq": sequence,
+            }
+        )
+
+    return points
+
+
 def calc_commissioning_time_s(
     current_a: float,
     pickup_a: float,
@@ -872,12 +957,14 @@ def build_translay_test_points(
     return pd.DataFrame(test_plan_rows)
 
 
-def default_relay_test_elements_df() -> pd.DataFrame:
+def default_relay_test_elements_df(relay_group: str = RELAY_TEST_DEFAULT_GROUP_NAME) -> pd.DataFrame:
+    normalized_group = str(relay_group).strip() or RELAY_TEST_DEFAULT_GROUP_NAME
     return pd.DataFrame(
         [
             {
+                "Relay_Group": normalized_group,
                 "Element": element_name,
-                "Relay_Details": "",
+                "Settings": "",
                 "Test_Requirements": "",
             }
             for element_name in RELAY_TEST_ELEMENT_OPTIONS
@@ -890,10 +977,28 @@ def sanitize_relay_test_elements(elements_df: pd.DataFrame) -> pd.DataFrame:
         return default_relay_test_elements_df()
 
     sanitized_df = elements_df.copy()
+
+    # Backward compatibility for sheets saved before grouped relay rows were introduced.
+    if "Relay_Group" not in sanitized_df.columns:
+        if "Relay" in sanitized_df.columns:
+            sanitized_df["Relay_Group"] = sanitized_df["Relay"]
+        else:
+            sanitized_df["Relay_Group"] = RELAY_TEST_DEFAULT_GROUP_NAME
+
+    if "Settings" not in sanitized_df.columns and "Relay_Details" in sanitized_df.columns:
+        sanitized_df["Settings"] = sanitized_df["Relay_Details"]
+
     for column_name in RELAY_TEST_ELEMENT_COLUMNS:
         if column_name not in sanitized_df.columns:
             sanitized_df[column_name] = ""
 
+    sanitized_df["Relay_Group"] = (
+        sanitized_df["Relay_Group"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .replace("", RELAY_TEST_DEFAULT_GROUP_NAME)
+    )
     sanitized_df["Element"] = (
         sanitized_df["Element"]
         .fillna("")
@@ -901,10 +1006,63 @@ def sanitize_relay_test_elements(elements_df: pd.DataFrame) -> pd.DataFrame:
         .str.strip()
         .replace("", "Other")
     )
-    sanitized_df["Relay_Details"] = sanitized_df["Relay_Details"].fillna("").astype(str)
+    sanitized_df["Settings"] = sanitized_df["Settings"].fillna("").astype(str)
     sanitized_df["Test_Requirements"] = sanitized_df["Test_Requirements"].fillna("").astype(str)
 
     return sanitized_df[RELAY_TEST_ELEMENT_COLUMNS]
+
+
+def build_relay_group_rows(elements_df: pd.DataFrame, relay_group: str) -> pd.DataFrame:
+    group_name = str(relay_group).strip() or RELAY_TEST_DEFAULT_GROUP_NAME
+    sanitized_df = sanitize_relay_test_elements(elements_df)
+    group_df = sanitized_df[sanitized_df["Relay_Group"] == group_name].copy()
+
+    by_element = {}
+    for _, row in group_df.iterrows():
+        element_name = str(row["Element"]).strip() or "Other"
+        existing_row = by_element.get(element_name, {"Settings": "", "Test_Requirements": ""})
+        settings_text = str(row["Settings"]).strip()
+        requirements_text = str(row["Test_Requirements"]).strip()
+
+        if settings_text:
+            existing_row["Settings"] = settings_text
+        if requirements_text:
+            existing_row["Test_Requirements"] = requirements_text
+
+        by_element[element_name] = existing_row
+
+    rows = []
+    for element_name in RELAY_TEST_ELEMENT_OPTIONS:
+        details = by_element.get(element_name, {"Settings": "", "Test_Requirements": ""})
+        rows.append(
+            {
+                "Element": element_name,
+                "Settings": details["Settings"],
+                "Test_Requirements": details["Test_Requirements"],
+            }
+        )
+
+    custom_elements = sorted(
+        element_name for element_name in by_element if element_name not in RELAY_TEST_ELEMENT_OPTIONS
+    )
+    for element_name in custom_elements:
+        details = by_element[element_name]
+        rows.append(
+            {
+                "Element": element_name,
+                "Settings": details["Settings"],
+                "Test_Requirements": details["Test_Requirements"],
+            }
+        )
+
+    return pd.DataFrame(rows)[["Element", "Settings", "Test_Requirements"]]
+
+
+def clear_relay_test_editor_widget_state() -> None:
+    st.session_state.pop("relay_test_elements_editor", None)
+    for state_key in list(st.session_state.keys()):
+        if str(state_key).startswith("relay_test_elements_editor_"):
+            st.session_state.pop(state_key, None)
 
 
 def sanitize_relay_test_header(header_data: object) -> dict:
@@ -915,6 +1073,13 @@ def sanitize_relay_test_header(header_data: object) -> dict:
             raw_header.get(field_key, RELAY_TEST_HEADER_DEFAULTS[field_key])
         ).strip()
     return sanitized_header
+
+
+def sanitize_relay_test_layout_style(layout_style: object) -> str:
+    normalized_style = str(layout_style).strip()
+    if normalized_style in RELAY_TEST_LAYOUT_OPTIONS:
+        return normalized_style
+    return RELAY_TEST_DEFAULT_LAYOUT
 
 
 def sanitize_relay_test_sheet_store(sheet_store: object) -> dict:
@@ -930,13 +1095,18 @@ def sanitize_relay_test_sheet_store(sheet_store: object) -> dict:
         if isinstance(sheet_data, dict):
             header_data = sanitize_relay_test_header(sheet_data.get("header", {}))
             elements_df = sanitize_relay_test_elements(pd.DataFrame(sheet_data.get("elements", [])))
+            layout_style = sanitize_relay_test_layout_style(
+                sheet_data.get("layout_style", RELAY_TEST_DEFAULT_LAYOUT)
+            )
         else:
             header_data = sanitize_relay_test_header({})
             elements_df = default_relay_test_elements_df()
+            layout_style = RELAY_TEST_DEFAULT_LAYOUT
 
         sanitized_store[panel_id] = {
             "header": header_data,
             "elements": elements_df.to_dict(orient="records"),
+            "layout_style": layout_style,
         }
 
     return sanitized_store
@@ -946,14 +1116,17 @@ def build_relay_test_instruction_text(
     panel_id: str,
     header_data: dict,
     elements_df: pd.DataFrame,
+    layout_style: str = RELAY_TEST_DEFAULT_LAYOUT,
 ) -> str:
     panel_name = panel_id.strip() or "Panel-001"
     sanitized_header = sanitize_relay_test_header(header_data)
     sanitized_elements_df = sanitize_relay_test_elements(elements_df)
+    sanitized_layout_style = sanitize_relay_test_layout_style(layout_style)
 
     lines = [
         "RELAY TEST INSTRUCTION SHEET",
         f"Panel Sheet ID: {panel_name}",
+        f"Layout Style: {sanitized_layout_style}",
         "=" * 72,
         "HEADER DETAILS",
         "-" * 72,
@@ -971,25 +1144,77 @@ def build_relay_test_instruction_text(
         ]
     )
 
-    for _, row in sanitized_elements_df.iterrows():
-        element_name = str(row["Element"]).strip() or "Other"
-        relay_details = str(row["Relay_Details"]).strip() or "-"
-        test_requirements = str(row["Test_Requirements"]).strip() or "-"
+    relay_group_names = list(dict.fromkeys(sanitized_elements_df["Relay_Group"].tolist()))
 
-        lines.extend(
-            [
-                f"Element: {element_name}",
-                "Left Column - Relay Details (including settings):",
-            ]
-        )
-        lines.extend([f"  {line}" for line in relay_details.splitlines()] if relay_details else ["  -"])
-        lines.append("Right Column - Test Requirements:")
-        lines.extend(
-            [f"  {line}" for line in test_requirements.splitlines()]
-            if test_requirements
-            else ["  -"]
-        )
-        lines.append("-" * 72)
+    if sanitized_layout_style == "ECNSW Compact":
+        for relay_group in relay_group_names:
+            group_name = str(relay_group).strip() or RELAY_TEST_DEFAULT_GROUP_NAME
+            lines.extend(
+                [
+                    f"Relay Group: {group_name}",
+                    "-" * 72,
+                    f"{'Element':<24} | {'Settings':<24} | Test requirements",
+                    "-" * 72,
+                ]
+            )
+
+            group_df = sanitized_elements_df[sanitized_elements_df["Relay_Group"] == group_name]
+            for _, row in group_df.iterrows():
+                element_name = str(row["Element"]).strip() or "Other"
+                relay_settings_lines = [
+                    line.strip() for line in str(row["Settings"]).splitlines() if line.strip()
+                ] or ["-"]
+                test_requirements_lines = [
+                    line.strip() for line in str(row["Test_Requirements"]).splitlines() if line.strip()
+                ] or ["-"]
+
+                row_line_count = max(len(relay_settings_lines), len(test_requirements_lines))
+                for row_line_index in range(row_line_count):
+                    element_cell = element_name if row_line_index == 0 else ""
+                    settings_cell = (
+                        relay_settings_lines[row_line_index]
+                        if row_line_index < len(relay_settings_lines)
+                        else ""
+                    )
+                    requirements_cell = (
+                        test_requirements_lines[row_line_index]
+                        if row_line_index < len(test_requirements_lines)
+                        else ""
+                    )
+                    lines.append(f"{element_cell:<24} | {settings_cell:<24} | {requirements_cell}")
+            lines.append("-" * 72)
+    else:
+        for relay_group in relay_group_names:
+            group_name = str(relay_group).strip() or RELAY_TEST_DEFAULT_GROUP_NAME
+            lines.extend(
+                [
+                    f"Relay Group: {group_name}",
+                    "-" * 72,
+                ]
+            )
+
+            group_df = sanitized_elements_df[sanitized_elements_df["Relay_Group"] == group_name]
+            for _, row in group_df.iterrows():
+                element_name = str(row["Element"]).strip() or "Other"
+                relay_settings = str(row["Settings"]).strip() or "-"
+                test_requirements = str(row["Test_Requirements"]).strip() or "-"
+
+                lines.extend(
+                    [
+                        f"Element: {element_name}",
+                        "Column 1 - Settings:",
+                    ]
+                )
+                lines.extend(
+                    [f"  {line}" for line in relay_settings.splitlines()] if relay_settings else ["  -"]
+                )
+                lines.append("Column 2 - Test Requirements:")
+                lines.extend(
+                    [f"  {line}" for line in test_requirements.splitlines()]
+                    if test_requirements
+                    else ["  -"]
+                )
+                lines.append("-" * 72)
 
     lines.extend(
         [
@@ -1042,6 +1267,18 @@ def sanitize_relay_settings(settings_df: pd.DataFrame) -> pd.DataFrame:
     relay_df["Order"] = relay_df["Order"].astype(int)
     relay_df["Device"] = relay_df["Device"].astype(str)
     return relay_df[RELAY_EXPORT_COLUMNS]
+
+
+def normalize_relay_editor_rows(settings_df: pd.DataFrame) -> pd.DataFrame:
+    if settings_df.empty:
+        return pd.DataFrame(columns=RELAY_EXPORT_COLUMNS)
+
+    relay_df = settings_df.copy()
+    for column_name in RELAY_EXPORT_COLUMNS:
+        if column_name not in relay_df.columns:
+            relay_df[column_name] = ""
+
+    return relay_df[RELAY_EXPORT_COLUMNS].reset_index(drop=True)
 
 
 def default_relay_settings_df() -> pd.DataFrame:
@@ -1486,6 +1723,9 @@ def persist_last_entered_state() -> None:
     relay_test_panel_id = str(
         st.session_state.get("relay_test_panel_id", COMMISSIONING_WIDGET_DEFAULTS["relay_test_panel_id"])
     ).strip() or COMMISSIONING_WIDGET_DEFAULTS["relay_test_panel_id"]
+    relay_test_layout_style = sanitize_relay_test_layout_style(
+        st.session_state.get("relay_test_layout_style", RELAY_TEST_DEFAULT_LAYOUT)
+    )
 
     payload = {
         "study_case": study_case_data,
@@ -1495,6 +1735,7 @@ def persist_last_entered_state() -> None:
         "relay_test_working_header": relay_test_working_header,
         "relay_test_working_elements": relay_test_elements_df[RELAY_TEST_ELEMENT_COLUMNS].to_dict(orient="records"),
         "relay_test_panel_id": relay_test_panel_id,
+        "relay_test_layout_style": relay_test_layout_style,
     }
 
     try:
@@ -1559,6 +1800,11 @@ def initialize_app_state() -> None:
         ).strip()
         st.session_state["relay_test_panel_id"] = (
             panel_id if panel_id else COMMISSIONING_WIDGET_DEFAULTS["relay_test_panel_id"]
+        )
+
+    if "relay_test_layout_style" not in st.session_state:
+        st.session_state["relay_test_layout_style"] = sanitize_relay_test_layout_style(
+            persisted_state.get("relay_test_layout_style", RELAY_TEST_DEFAULT_LAYOUT)
         )
 
     if "relay_test_elements" not in st.session_state:
@@ -2458,9 +2704,14 @@ with protection_tab:
         else:
             st.error(st.session_state["relay_upload_message"])
 
-    relay_editor_df = pd.DataFrame(st.session_state.relay_settings).reset_index(drop=True)
-    if relay_editor_df.empty:
+    relay_editor_df = normalize_relay_editor_rows(
+        pd.DataFrame(st.session_state.get("relay_settings", pd.DataFrame()))
+    )
+    if relay_editor_df.empty and "relay_settings_editor_initialized" not in st.session_state:
         relay_editor_df = default_relay_settings_df()
+        st.session_state.relay_settings = relay_editor_df.copy()
+
+    st.session_state["relay_settings_editor_initialized"] = True
 
     edited_df = st.data_editor(
         relay_editor_df,
@@ -2476,7 +2727,7 @@ with protection_tab:
             "Inst_A": st.column_config.NumberColumn("Instantaneous pickup (A)", min_value=0.0),
         },
     )
-    edited_df = pd.DataFrame(edited_df).reset_index(drop=True)
+    edited_df = normalize_relay_editor_rows(pd.DataFrame(edited_df))
     st.session_state.relay_settings = edited_df
 
     relay_df = sanitize_relay_settings(pd.DataFrame(edited_df))
@@ -2616,29 +2867,32 @@ with protection_tab:
             min_pickup * ((max_current / min_pickup) ** (idx / 79))
             for idx in range(80)
         ]
-        tcc_df = pd.DataFrame({"Current_A": current_points})
-
+        tcc_rows = []
         for _, row in relay_df.sort_values("Order").iterrows():
-            times = [
-                calc_relay_time_s(
-                    current_a=value,
-                    pickup_a=float(row["Pickup_A"]),
-                    tms=float(row["TMS"]),
-                    curve_name=str(row["Curve"]),
-                    inst_pickup_a=0.0,
+            relay_points = build_relay_tcc_points(
+                current_points=current_points,
+                pickup_a=float(row["Pickup_A"]),
+                tms=float(row["TMS"]),
+                curve_name=str(row["Curve"]),
+                inst_pickup_a=float(row["Inst_A"]),
+            )
+            for point in relay_points:
+                tcc_rows.append(
+                    {
+                        "Device": str(row["Device"]),
+                        "Current_A": float(point["Current_A"]),
+                        "Operate_s": float(point["Operate_s"]),
+                        "Seq": int(point["Seq"]),
+                    }
                 )
-                for value in current_points
-            ]
-            cleaned_times = [time if math.isfinite(time) and time <= 30 else None for time in times]
-            tcc_df[str(row["Device"])] = cleaned_times
 
         st.markdown("#### Time-Current Curves (Approximate)")
-        tcc_long_df = tcc_df.melt(
-            id_vars="Current_A",
-            var_name="Device",
-            value_name="Operate_s",
-        ).dropna()
-        tcc_long_df = tcc_long_df[(tcc_long_df["Current_A"] > 0) & (tcc_long_df["Operate_s"] > 0)]
+        tcc_long_df = pd.DataFrame(tcc_rows)
+        if not tcc_long_df.empty:
+            tcc_long_df = tcc_long_df[
+                (tcc_long_df["Current_A"] > 0)
+                & (tcc_long_df["Operate_s"] > 0)
+            ].copy()
 
         if tcc_long_df.empty:
             st.warning("No valid relay curve points available for log-log plotting.")
@@ -2662,6 +2916,7 @@ with protection_tab:
                         axis=alt.Axis(grid=True),
                     ),
                     color=alt.Color("Device:N", title="Device"),
+                    order=alt.Order("Seq:Q"),
                     tooltip=[
                         alt.Tooltip("Device:N", title="Device"),
                         alt.Tooltip("Current_A:Q", title="Current (A)", format=".2f"),
@@ -3789,7 +4044,15 @@ with relay_test_tab:
             st.session_state.relay_test_elements = sanitize_relay_test_elements(
                 pd.DataFrame(loaded_sheet.get("elements", []))
             )
-            st.session_state.pop("relay_test_elements_editor", None)
+            st.session_state["relay_test_layout_style"] = sanitize_relay_test_layout_style(
+                loaded_sheet.get("layout_style", RELAY_TEST_DEFAULT_LAYOUT)
+            )
+            loaded_groups = list(
+                dict.fromkeys(pd.DataFrame(st.session_state.relay_test_elements)["Relay_Group"].tolist())
+            )
+            if loaded_groups:
+                st.session_state["relay_test_selected_group"] = loaded_groups[0]
+            clear_relay_test_editor_widget_state()
             st.success(f"Loaded relay test sheet for panel '{panel_to_load}'.")
             st.rerun()
 
@@ -3815,28 +4078,110 @@ with relay_test_tab:
 
     relay_test_elements_df = pd.DataFrame(st.session_state.get("relay_test_elements", pd.DataFrame()))
     relay_test_elements_df = sanitize_relay_test_elements(relay_test_elements_df)
+    relay_group_names = list(dict.fromkeys(relay_test_elements_df["Relay_Group"].tolist()))
+    if not relay_group_names:
+        relay_group_names = [RELAY_TEST_DEFAULT_GROUP_NAME]
 
-    populate_defaults_col1, populate_defaults_col2 = st.columns([2, 1])
+    if str(st.session_state.get("relay_test_selected_group", "")).strip() not in relay_group_names:
+        st.session_state["relay_test_selected_group"] = relay_group_names[0]
+
+    group_col1, group_col2, group_col3, group_col4 = st.columns([3, 2, 1, 1])
+    with group_col1:
+        selected_relay_group = st.selectbox(
+            "Relay groups",
+            options=relay_group_names,
+            key="relay_test_selected_group",
+            help="Each relay group contains one row per protection element.",
+        )
+    with group_col2:
+        new_relay_group_name = st.text_input(
+            "New relay group",
+            key="relay_test_new_group_name",
+            placeholder="Relay 2",
+        )
+    with group_col3:
+        add_relay_group_pressed = st.button(
+            "Add relay",
+            key="relay_test_add_group",
+            use_container_width=True,
+        )
+    with group_col4:
+        remove_relay_group_pressed = st.button(
+            "Remove relay",
+            key="relay_test_remove_group",
+            use_container_width=True,
+        )
+
+    layout_col1, layout_col2 = st.columns([2, 3])
+    with layout_col1:
+        st.selectbox(
+            "Instruction layout",
+            options=RELAY_TEST_LAYOUT_OPTIONS,
+            key="relay_test_layout_style",
+            help="Applies to text preview/export. Use ECNSW Compact for a denser table view.",
+        )
+    with layout_col2:
+        st.caption(f"Relay groups configured: {len(relay_group_names)}")
+
+    if add_relay_group_pressed:
+        candidate_group = new_relay_group_name.strip()
+        if not candidate_group:
+            st.warning("Enter a relay group name before adding.")
+        elif candidate_group in relay_group_names:
+            st.warning(f"Relay group '{candidate_group}' already exists.")
+        else:
+            st.session_state.relay_test_elements = sanitize_relay_test_elements(
+                pd.concat(
+                    [relay_test_elements_df, default_relay_test_elements_df(candidate_group)],
+                    ignore_index=True,
+                )
+            )
+            st.session_state["relay_test_selected_group"] = candidate_group
+            st.session_state["relay_test_new_group_name"] = ""
+            clear_relay_test_editor_widget_state()
+            st.rerun()
+
+    if remove_relay_group_pressed:
+        if len(relay_group_names) <= 1:
+            st.warning("At least one relay group is required.")
+        else:
+            remaining_df = relay_test_elements_df[
+                relay_test_elements_df["Relay_Group"] != selected_relay_group
+            ].copy()
+            st.session_state.relay_test_elements = sanitize_relay_test_elements(remaining_df)
+            remaining_group_names = list(
+                dict.fromkeys(st.session_state.relay_test_elements["Relay_Group"].tolist())
+            )
+            st.session_state["relay_test_selected_group"] = remaining_group_names[0]
+            clear_relay_test_editor_widget_state()
+            st.rerun()
+
+    populate_defaults_col1, populate_defaults_col2 = st.columns([3, 2])
     with populate_defaults_col1:
         st.caption(
-            "Left column: relay details and settings. Right column: test requirements for each protection element."
+            "Each relay is shown as a grouped block of rows. Each element is a row, with column 1 = Settings and column 2 = Test requirements."
         )
     with populate_defaults_col2:
         if st.button(
-            "Populate OC/EF, Differential, Translay",
+            "Populate selected relay group",
             key="relay_test_autofill_common",
             use_container_width=True,
         ):
+            target_group = selected_relay_group
             populated_df = relay_test_elements_df.copy()
 
-            def update_element_row(element_name: str, relay_details: str, requirements: str) -> None:
-                row_matches = populated_df.index[populated_df["Element"] == element_name]
+            def update_element_row(element_name: str, relay_settings: str, requirements: str) -> None:
+                row_matches = populated_df.index[
+                    (populated_df["Relay_Group"] == target_group)
+                    & (populated_df["Element"] == element_name)
+                ]
                 if not row_matches.empty:
                     target_index = row_matches[0]
                 else:
                     target_index = len(populated_df)
+                    populated_df.loc[target_index, "Relay_Group"] = target_group
                     populated_df.loc[target_index, "Element"] = element_name
-                populated_df.loc[target_index, "Relay_Details"] = relay_details
+                populated_df.loc[target_index, "Settings"] = relay_settings
                 populated_df.loc[target_index, "Test_Requirements"] = requirements
 
             oc_details = (
@@ -3878,30 +4223,49 @@ with relay_test_tab:
             update_element_row("Translay", translay_details, translay_requirements)
 
             st.session_state.relay_test_elements = sanitize_relay_test_elements(populated_df)
-            st.session_state.pop("relay_test_elements_editor", None)
-            st.success("Common protection elements populated from current commissioning settings.")
+            clear_relay_test_editor_widget_state()
+            st.success(
+                f"Common protection elements populated from commissioning settings for relay group '{target_group}'."
+            )
             st.rerun()
 
-    edited_relay_test_elements_df = st.data_editor(
-        relay_test_elements_df,
-        num_rows="dynamic",
-        key="relay_test_elements_editor",
+    st.markdown(f"#### Relay Group: {selected_relay_group}")
+    selected_group_rows_df = build_relay_group_rows(relay_test_elements_df, selected_relay_group)
+    selected_group_editor_df = selected_group_rows_df.set_index("Element")
+    st.caption("Row labels are protection elements. Column 1 is Settings and column 2 is Test requirements.")
+    selected_group_editor_key = (
+        f"relay_test_elements_editor_{hashlib.sha1(selected_relay_group.encode('utf-8')).hexdigest()[:10]}"
+    )
+    edited_selected_group_editor_df = st.data_editor(
+        selected_group_editor_df,
+        num_rows="fixed",
+        key=selected_group_editor_key,
+        hide_index=False,
         use_container_width=True,
         height=360,
         column_config={
-            "Element": st.column_config.SelectboxColumn(
-                "Protection Element",
-                options=RELAY_TEST_ELEMENT_OPTIONS,
-                required=True,
-            ),
-            "Relay_Details": st.column_config.TextColumn("Relay Details (left column)", width="large"),
+            "_index": st.column_config.TextColumn("Element", disabled=True, width="medium"),
+            "Settings": st.column_config.TextColumn("Settings (column 1)", width="large"),
             "Test_Requirements": st.column_config.TextColumn(
-                "Test Requirements (right column)",
+                "Test requirements (column 2)",
                 width="large",
             ),
         },
     )
-    st.session_state.relay_test_elements = pd.DataFrame(edited_relay_test_elements_df).reset_index(drop=True)
+    edited_selected_group_df = pd.DataFrame(edited_selected_group_editor_df).reset_index()
+    if "Element" not in edited_selected_group_df.columns and not edited_selected_group_df.empty:
+        edited_selected_group_df = edited_selected_group_df.rename(
+            columns={edited_selected_group_df.columns[0]: "Element"}
+        )
+    edited_selected_group_df["Relay_Group"] = selected_relay_group
+    other_groups_df = relay_test_elements_df[
+        relay_test_elements_df["Relay_Group"] != selected_relay_group
+    ].copy()
+    merged_elements_df = pd.concat(
+        [other_groups_df[RELAY_TEST_ELEMENT_COLUMNS], edited_selected_group_df[RELAY_TEST_ELEMENT_COLUMNS]],
+        ignore_index=True,
+    )
+    st.session_state.relay_test_elements = sanitize_relay_test_elements(merged_elements_df)
 
     current_header = sanitize_relay_test_header(
         {
@@ -3929,6 +4293,9 @@ with relay_test_tab:
                 relay_test_store[panel_sheet_key] = {
                     "header": current_header,
                     "elements": current_elements_df.to_dict(orient="records"),
+                    "layout_style": sanitize_relay_test_layout_style(
+                        st.session_state.get("relay_test_layout_style", RELAY_TEST_DEFAULT_LAYOUT)
+                    ),
                 }
                 st.session_state.relay_test_sheets = sanitize_relay_test_sheet_store(relay_test_store)
                 st.success(f"Saved relay test instruction sheet for panel '{panel_sheet_key}'.")
@@ -3938,6 +4305,7 @@ with relay_test_tab:
         panel_id=active_panel_id,
         header_data=current_header,
         elements_df=current_elements_df,
+        layout_style=st.session_state.get("relay_test_layout_style", RELAY_TEST_DEFAULT_LAYOUT),
     )
     safe_panel_filename = "".join(
         character if (character.isalnum() or character in {"-", "_"}) else "_"

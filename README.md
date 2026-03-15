@@ -1,6 +1,6 @@
 # Protection
 
-Current release: Rev 0.2.
+Current release: Rev 0.3.
 
 [![CI](https://github.com/flyingdave/Protection/actions/workflows/ci.yml/badge.svg)](https://github.com/flyingdave/Protection/actions/workflows/ci.yml)
 
